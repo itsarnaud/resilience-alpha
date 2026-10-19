@@ -13,14 +13,14 @@ Cinq services et un package partagé :
 | dashboard     | `services/dashboard`   | Supervision pour le jury : état des services, incidents, avancement de la reprise.                                                          |
 | shared        | `packages/shared`      | Schémas, types, middleware JWT, logger, client HTTP typé, utilisés par les services.                                                        |
 
-Chaque service tourne dans son propre conteneur. Les bases sont trois bases PostgreSQL dans une même instance : `auth`, `payments` et `remediation`, chacune avec son propre accès. L'API paiements n'a aucun droit sur la base `auth`, et la base `remediation` conserve l'historique des incidents si le moteur redémarre.
+Chaque service tourne dans son propre conteneur, avec sa propre base PostgreSQL 16 dans un conteneur séparé (`db-auth`, `db-paiement`, et une base pour la remédiation à créer). Aucun service n'a accès à la base d'un autre. La base de la remédiation conserve l'historique des incidents si le moteur redémarre.
 
 ## 2. Vue d'ensemble
 
 ```mermaid
 flowchart TB
   user([Utilisateur])
-  waf["WAF<br/>reverse proxy + ModSecurity<br/>un seul port publié (ex. 2502)"]
+  waf["WAF<br/>reverse proxy + ModSecurity<br/>un seul port publié"]
 
   subgraph dev["Services DEV"]
     front["front"]
@@ -28,18 +28,18 @@ flowchart TB
     auth["auth"]
     api["api paiements"]
     rem["remédiation"]
-    dba[("base auth")]
-    dbp[("base payments")]
-    dbr[("base remediation")]
+    dba[("db-auth")]
+    dbp[("db-paiement")]
+    dbr[("base remédiation<br/>(à créer)")]
   end
 
   subgraph ext["Autres piliers"]
-    obs["Prometheus et Loki<br/>(infra)"]
+    obs["Prometheus, Loki, Grafana<br/>(infra)"]
     ml["détecteur ML<br/>(IA)"]
-    siem["SIEM<br/>(cyber)"]
+    siem["SIEM Wazuh<br/>(cyber)"]
     notif["Notifications<br/>mail, bot Discord"]
-    secrets["Secrets SOPS<br/>(cyber)"]
-    docker["proxy Docker<br/>(infra)"]
+    secrets["Secrets<br/>(cyber, à définir)"]
+    docker["proxy Docker<br/>(infra, à ajouter)"]
   end
 
   user --> waf
@@ -76,7 +76,9 @@ Traits pleins : appels directs. Pointillés : vérification ou observation.
 
 - Point d'accès mobile Windows `RESILIENCE-G3`, réseau `192.168.137.0/24`.
 - PC Hôte en `192.168.137.1`, qui fait tourner tous les conteneurs.
-- Depuis le réseau, on n'accède qu'au WAF, sur un port dédié (par exemple 2502). Il redirige vers les conteneurs applicatifs. Les bases, le proxy Docker et les secrets ne sont pas publiés.
+- Depuis le réseau, on ne doit accéder qu'au WAF, sur un port dédié. Il redirige vers les conteneurs applicatifs. Les bases, le proxy Docker et les secrets ne sont pas publiés.
+- Le compose de l'infra sépare quatre réseaux Docker : `frontend` (seul le WAF), `backend` (les applications entre elles), `data` (applications et bases), `monitoring` (Prometheus, Loki, Grafana, Wazuh).
+- État actuel du compose : le WAF écoute sur le port 80, et Prometheus (9090), Grafana (3000) et Wazuh (1514, 1515, 55000) sont aussi publiés. À restreindre, voir 9.1.
 
 ## 3. Le scénario vu par les services
 
@@ -128,7 +130,7 @@ On commence par deux. Les autres viennent si le temps le permet.
 
 La transaction de test se fait entre deux comptes créés par un script de seed. Pour l'instant elle appelle l'API directement, sans passer par le WAF : elle prouve que l'API fonctionne, pas que le chemin public est rétabli. Si on la fait passer par le WAF, son IP ne doit pas être celle de l'attaquant (voir les points à décider avec la cyber, section 9).
 
-Le moteur de remédiation ne reçoit d'ordres que du détecteur. Il parle à Docker uniquement via le proxy filtré fourni par l'infra, jamais directement au socket, et il ne touche qu'une liste de conteneurs autorisés.
+Le moteur de remédiation ne reçoit d'ordres que du détecteur. Il parle à Docker uniquement via un proxy filtré fourni par l'infra, jamais directement au socket, et il ne touche qu'une liste de conteneurs autorisés. Ce proxy n'est pas encore dans le compose.
 
 ## 5. Authentification et droits
 
@@ -161,11 +163,11 @@ Conventions communes : routes sous `/v1`, erreurs au format `application/problem
 
 Ce que les autres attendent de nous, et ce qu'on attend d'eux :
 
-| Avec qui | Interface                                                                                                                                                                                                                                                            |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| IA / ML  | Le détecteur appelle `POST /v1/incidents` sur la remédiation avec un jeton `svc:detector`. Il lit nos métriques et nos logs.                                                                                                                                         |
-| Infra    | Chaque service DEV est livré prêt à tourner : un `Dockerfile` et un `docker-compose.yml` complet et autonome pour les services DEV et leurs bases. L'infra se charge de l'intégration avec le reste (WAF, observabilité) et de l'automatisation Ansible.             |
-| Cyber    | Le WAF est un reverse proxy avec ModSecurity. Il doit offrir une façon de bloquer et débloquer une IP que la remédiation peut appeler (à définir). Le SIEM collecte les événements, l'authentification en priorité, et envoie des notifications (mail, bot Discord). |
+| Avec qui | Interface                                                                                                                                                                                                                                                                                 |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IA / ML  | Le détecteur appelle `POST /v1/incidents` sur la remédiation avec un jeton `svc:detector`. Il lit nos métriques et nos logs.                                                                                                                                                              |
+| Infra    | Le compose de l'infra (`infra/compose`) lance les services, les bases, le WAF, l'observabilité, Wazuh et un nœud Ansible. Chaque service DEV fournit un `Dockerfile`, `/healthz`, `/metrics` et des logs JSON sur la sortie standard.                                                     |
+| Cyber    | Le WAF est un reverse proxy Nginx avec ModSecurity. Il doit offrir une façon de bloquer et débloquer une IP que la remédiation peut appeler (à définir). Le SIEM est Wazuh : il collecte les événements, l'authentification en priorité, et envoie des notifications (mail, bot Discord). |
 
 ## 9. À valider
 
@@ -174,10 +176,10 @@ Ce que les autres attendent de nous, et ce qu'on attend d'eux :
 **Déjà répondu**
 
 - Réseau : hotspot `RESILIENCE-G3`, `192.168.137.0/24`, PC Hôte en `192.168.137.1`.
-- Seul le WAF est joignable depuis le réseau, sur un port dédié (par exemple 2502). Il atteint le front, l'API et le SIEM.
+- Seul le WAF doit être joignable depuis le réseau, sur un port dédié (par exemple 2502). Il atteint le front, l'API et le SIEM.
 - WAF : reverse proxy avec ModSecurity.
 - SIEM : collecte tous types d'événements (système, endpoint, réseau, authentification, cette dernière étant la plus importante) et envoie des notifications par mail ou bot Discord.
-- Chaque service DEV doit être livré avec un `docker-compose.yml` complet et autonome.
+- Un compose complet existe dans `infra/compose` (services, bases, WAF, Prometheus, Loki, Promtail, Grafana, Wazuh manager, Ansible).
 
 **Encore ouvert avec la cyber**
 
@@ -187,11 +189,16 @@ Ce que les autres attendent de nous, et ce qu'on attend d'eux :
 - Comment les secrets arrivent dans les conteneurs.
 - La transaction de test passe-t-elle par le WAF, et avec quelle IP ?
 
-**Encore ouvert avec l'infra**
+**Encore ouvert avec l'infra** (écarts entre le compose et notre architecture)
 
-- Si chaque service DEV a son compose autonome, comment l'infra l'assemble-t-elle avec le WAF et l'observabilité (un seul compose global, ou plusieurs fichiers fusionnés) ?
-- Découpage des réseaux Docker et accès de la remédiation au proxy Docker.
-- Le port exact du WAF.
+- **Ports publiés** : en plus du WAF (port 80 aujourd'hui, 2502 évoqué), Prometheus, Grafana et Wazuh sont publiés sur toutes les interfaces, donc visibles depuis le hotspot. Les lier à `127.0.0.1`, et fixer le port du WAF.
+- **Routage du WAF** : l'image `owasp/modsecurity-crs` n'a qu'un seul `BACKEND` (`application`). Il faut des routes vers `auth`, `api`, le dashboard et le SIEM.
+- **Remédiation** : elle n'a pas de base, pas d'accès au proxy Docker (absent du compose) et pas de moyen de bloquer une IP dans le WAF.
+- **Noms et services manquants** : aligner `application` et `api-paiement` avec `front` et `api`, et ajouter un conteneur `dashboard`.
+- **Code et images** : le compose monte `./apps/<nom>` dans une image `node:20-alpine` et lance `npm install` à chaque démarrage. Notre code est dans `services/<nom>`, et on veut un `Dockerfile` par service en `node:22-slim` (Prisma sur Alpine pose problème).
+- **Healthchecks** : seules les bases en ont. Les services DEV exposeront `/healthz`.
+- **Secrets** : un `.env` obligatoire sans exemple fourni, et aucune intégration de la méthode de secrets choisie.
+- **Mémoire** : le README annonce environ 4 Go pour Wazuh et le reste de la stack, à confirmer en regard des 16 Go du PC Hôte.
 
 **IA / Data**
 
