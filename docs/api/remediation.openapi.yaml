@@ -1,0 +1,188 @@
+openapi: 3.1.0
+info:
+  title: RESILIENCE-ALPHA remediation
+  version: 0.1.0
+  description: |
+    Moteur de remédiation. Réseau `control`, non routé par le WAF.
+    Écriture réservée à `svc:detector`. Lecture réservée à `operator` et `svc:dashboard`.
+servers:
+  - url: http://remediation:8000
+security: [{ bearer: [] }]
+paths:
+  /v1/incidents:
+    post:
+      summary: Signaler un incident détecté (appelé uniquement par ml-detector)
+      operationId: createIncident
+      description: Rôle requis `svc:detector`. Idempotent sur `dedup_key`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncidentReport' }
+      responses:
+        '202':
+          description: Incident accepté, remédiation lancée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        '200':
+          description: Incident déjà en cours (dédoublonné)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+    get:
+      summary: Lister les incidents
+      operationId: listIncidents
+      parameters:
+        - { name: state, in: query, schema: { $ref: '#/components/schemas/IncidentState' } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        '200':
+          description: Liste
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Incident' }
+  /v1/incidents/{incidentId}:
+    get:
+      summary: Détail d'un incident avec la chronologie des actions
+      operationId: getIncident
+      parameters:
+        - { name: incidentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /v1/incidents/stream:
+    get:
+      summary: Flux SSE des changements d'état (dashboard)
+      operationId: streamIncidents
+      responses:
+        '200':
+          description: text/event-stream ; chaque événement est un Incident JSON
+          content:
+            text/event-stream:
+              schema: { type: string }
+  /v1/playbooks:
+    get:
+      summary: Playbooks disponibles
+      operationId: listPlaybooks
+      responses:
+        '200':
+          description: Liste
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Playbook' }
+  /v1/services:
+    get:
+      summary: État courant des services supervisés (santé + dernière canari)
+      operationId: listServices
+      responses:
+        '200':
+          description: États
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceStatus' }
+  /healthz:
+    get:
+      summary: Liveness
+      security: []
+      responses:
+        '200': { description: OK }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Problem:
+      description: Erreur (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    IncidentType:
+      type: string
+      enum:
+        [
+          HTTP_FLOOD,
+          BRUTE_FORCE,
+          SERVICE_DOWN,
+          DATA_INCONSISTENCY,
+          INJECTION_ATTEMPT,
+          UNKNOWN_ANOMALY,
+        ]
+    IncidentState:
+      type: string
+      enum: [DETECTED, REMEDIATING, VERIFYING, RESOLVED, FAILED]
+    IncidentReport:
+      type: object
+      required: [dedup_key, type, score, detected_at]
+      properties:
+        dedup_key: { type: string, description: 'ex. HTTP_FLOOD:api:203.0.113.5' }
+        type: { $ref: '#/components/schemas/IncidentType' }
+        score: { type: number, minimum: 0, maximum: 1, description: Score d'anomalie normalisé }
+        detected_at: { type: string, format: date-time }
+        target_service: { type: string, examples: [api] }
+        source_ip: { type: [string, 'null'] }
+        evidence:
+          type: array
+          description: Requêtes ayant justifié la détection
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [promql, logql] }
+              query: { type: string }
+              value: { type: number }
+    Incident:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/IncidentType' }
+        state: { $ref: '#/components/schemas/IncidentState' }
+        score: { type: number }
+        target_service: { type: string }
+        source_ip: { type: [string, 'null'] }
+        detected_at: { type: string, format: date-time }
+        resolved_at: { type: [string, 'null'], format: date-time }
+        time_to_recover_seconds: { type: [number, 'null'] }
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              at: { type: string, format: date-time }
+              step: { type: string, examples: [block_source, canary_transaction] }
+              ok: { type: boolean }
+              detail: { type: string }
+    Playbook:
+      type: object
+      properties:
+        name: { type: string, examples: [block_source] }
+        handles: { type: array, items: { $ref: '#/components/schemas/IncidentType' } }
+        steps: { type: array, items: { type: string } }
+    ServiceStatus:
+      type: object
+      properties:
+        name: { type: string }
+        healthy: { type: boolean }
+        last_canary_ok_at: { type: [string, 'null'], format: date-time }
+        last_check_at: { type: string, format: date-time }
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        request_id: { type: string }

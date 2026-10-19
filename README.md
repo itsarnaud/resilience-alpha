@@ -18,6 +18,19 @@ docs/          documentation (architecture, API, procédures ingérées par le R
 scripts/       outils : check-secrets.sh
 ```
 
+## Documentation
+
+- [Architecture, flux, sécurité et plan DEV](docs/architecture.md)
+- Contrats d'API : [auth](docs/api/auth.openapi.yaml), [paiements](docs/api/payments.openapi.yaml), [remédiation](docs/api/remediation.openapi.yaml)
+
+### Visualiser les contrats d'API
+
+```bash
+npm run docs:api
+```
+
+Puis ouvrir http://localhost:8081 (Swagger UI, menu déroulant en haut à droite pour passer de `auth`, `paiements`, `remediation` et `ia`). Nécessite Docker. Les fichiers sont relus à chaque chargement de la page, il suffit de la recharger après une modification d'un `.yaml`. `Ctrl+C` pour arrêter.
+
 ## Prérequis
 
 - PC Hôte : Windows 10/11, Docker Desktop + WSL2, 16 Go RAM, point d'accès mobile `RESILIENCE-G<n>` (hôte en `192.168.137.1`)

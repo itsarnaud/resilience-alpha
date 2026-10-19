@@ -1,0 +1,177 @@
+openapi: 3.1.0
+info:
+  title: RESILIENCE-ALPHA api-metier (paiements fictifs)
+  version: 0.1.0
+  description: |
+    Paiements simulés. Aucune donnée bancaire réelle. Montants en centimes.
+    Les transactions marquées `synthetic` sont émises par le moteur de remédiation (canari).
+servers:
+  - url: /api
+security: [{ bearer: [] }]
+paths:
+  /v1/accounts:
+    get:
+      summary: Comptes de l'utilisateur
+      operationId: listAccounts
+      responses:
+        '200':
+          description: Liste
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Account' }
+  /v1/accounts/{accountId}:
+    get:
+      summary: Détail et solde
+      operationId: getAccount
+      parameters:
+        - { name: accountId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Compte
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /v1/transactions:
+    post:
+      summary: Initier un virement simulé
+      operationId: createTransaction
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+          description: Rejouer la même clé renvoie la transaction d'origine.
+        - name: X-Synthetic
+          in: header
+          required: false
+          schema: { type: boolean }
+          description: Réservé au rôle `svc:remediation-canary`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransactionRequest' }
+      responses:
+        '201':
+          description: Transaction exécutée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '200':
+          description: Rejeu idempotent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '402': { $ref: '#/components/responses/Problem' }
+        '403':
+          {
+            description: 'Refus anti-fraude (le motif figure dans detail et dans les logs)',
+            content:
+              { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } },
+          }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+    get:
+      summary: Historique paginé
+      operationId: listTransactions
+      parameters:
+        - { name: account_id, in: query, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Transaction' }
+                  next_cursor: { type: [string, 'null'] }
+  /v1/transactions/{transactionId}:
+    get:
+      summary: Détail d'une transaction
+      operationId: getTransaction
+      parameters:
+        - { name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Transaction
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /healthz:
+    get:
+      summary: Liveness (processus vivant)
+      security: []
+      responses:
+        '200': { description: OK }
+  /readyz:
+    get:
+      summary: Readiness profonde (DB joignable, JWKS chargé, requête d'écriture de test)
+      security: []
+      responses:
+        '200': { description: Prêt }
+        '503': { description: Non prêt }
+  /metrics:
+    get:
+      summary: Métriques Prometheus (réseau obs uniquement, non routé par le WAF)
+      security: []
+      responses:
+        '200': { description: text/plain }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Problem:
+      description: Erreur (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Account:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        owner_id: { type: string, format: uuid }
+        iban: { type: string, description: IBAN fictif }
+        balance_cents: { type: integer }
+        currency: { type: string, const: EUR }
+    TransactionRequest:
+      type: object
+      required: [from_account_id, amount_cents]
+      description: Fournir `to_account_id` (compte interne) ou `to_iban` (compte externe), pas les deux.
+      properties:
+        from_account_id: { type: string, format: uuid }
+        to_account_id: { type: string, format: uuid }
+        to_iban: { type: string, description: IBAN fictif d'un compte externe }
+        amount_cents: { type: integer, minimum: 1, maximum: 1000000 }
+        label: { type: string, maxLength: 140 }
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        from_account_id: { type: string, format: uuid }
+        to_account_id: { type: string, format: uuid }
+        amount_cents: { type: integer }
+        label: { type: string }
+        status: { type: string, enum: [COMPLETED, REJECTED] }
+        synthetic: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        request_id: { type: string }

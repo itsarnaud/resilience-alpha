@@ -1,0 +1,19 @@
+# Visualisation locale des contrats api
+# npm run docs:api --> http://localhost:8081
+# dev uniquement, séparé du compose de la plateforme.
+services:
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    ports:
+      - '127.0.0.1:8081:8080'
+    volumes:
+      - ./api:/usr/share/nginx/html/specs:ro
+    environment:
+      URLS: >-
+        [
+          {"url": "/specs/auth.openapi.yaml", "name": "auth"},
+          {"url": "/specs/payments.openapi.yaml", "name": "paiements"},
+          {"url": "/specs/remediation.openapi.yaml", "name": "remediation"},
+          {"url": "/specs/ai.openapi.yaml", "name": "ia (detecteur et assistant)"}
+        ]
+      URLS_PRIMARY_NAME: remediation

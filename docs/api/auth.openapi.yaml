@@ -1,0 +1,140 @@
+openapi: 3.1.0
+info:
+  title: RESILIENCE-ALPHA auth
+  version: 0.1.0
+  description: Authentification des utilisateurs et des services. Jetons JWT RS256.
+servers:
+  - url: /auth
+paths:
+  /v1/login:
+    post:
+      summary: Connexion utilisateur
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Jeton émis
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /v1/token:
+    post:
+      summary: Jeton de service (client credentials)
+      operationId: serviceToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClientCredentials' }
+      responses:
+        '200':
+          description: Jeton de service
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /v1/register:
+    post:
+      summary: Création d'un compte client fictif
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Compte créé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /v1/me:
+    get:
+      summary: Profil de l'utilisateur courant
+      operationId: me
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: Profil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /.well-known/jwks.json:
+    get:
+      summary: Clés publiques de vérification (consommé par api-metier et remediation)
+      operationId: jwks
+      responses:
+        '200':
+          description: JWKS
+          content:
+            application/json:
+              schema: { type: object }
+  /healthz:
+    get:
+      summary: Liveness
+      responses:
+        '200': { description: OK }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Problem:
+      description: Erreur (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, writeOnly: true }
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, writeOnly: true, minLength: 12 }
+    ClientCredentials:
+      type: object
+      required: [client_id, client_secret]
+      properties:
+        client_id: { type: string, examples: [svc-detector] }
+        client_secret: { type: string, writeOnly: true }
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, const: Bearer }
+        expires_in: { type: integer, examples: [900] }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        roles:
+          type: array
+          items:
+            {
+              type: string,
+              enum: [customer, operator, 'svc:detector', 'svc:dashboard', 'svc:remediation-canary'],
+            }
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        request_id: { type: string }

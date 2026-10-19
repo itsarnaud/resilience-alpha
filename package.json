@@ -14,6 +14,7 @@
     "prepare": "husky",
     "format": "prettier --write .",
     "check:secrets": "bash scripts/check-secrets.sh",
+    "docs:api": "docker compose -f docs/docker-compose.yml up",
     "test": "bash scripts/run-tests.sh"
   },
   "lint-staged": {

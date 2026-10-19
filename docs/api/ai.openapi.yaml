@@ -1,0 +1,94 @@
+openapi: 3.1.0
+info:
+  title: RESILIENCE-ALPHA IA (ml-detector et rag-assistant)
+  version: 0.1.0
+  description: Deux services sur le réseau `ai`. Aucun n'est routé par le WAF.
+security: [{ bearer: [] }]
+paths:
+  /detector/v1/anomalies:
+    get:
+      summary: Derniers scores d'anomalie (dashboard)
+      operationId: listAnomalies
+      description: 'Service : ml-detector. Rôle `operator` ou `svc:dashboard`.'
+      parameters:
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer, default: 200, maximum: 1000 } }
+      responses:
+        '200':
+          description: Série de scores
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    at: { type: string, format: date-time }
+                    score: { type: number }
+                    is_anomaly: { type: boolean }
+                    features:
+                      type: object
+                      additionalProperties: { type: number }
+  /detector/v1/model:
+    get:
+      summary: Métadonnées du modèle chargé (version, date d'entraînement, seuil)
+      operationId: modelInfo
+      responses:
+        '200':
+          description: Modèle
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string, examples: [isolation-forest] }
+                  version: { type: string }
+                  trained_at: { type: string, format: date-time }
+                  threshold: { type: number }
+                  features: { type: array, items: { type: string } }
+  /detector/healthz:
+    get:
+      summary: Liveness
+      security: []
+      responses:
+        '200': { description: OK }
+  /assistant/v1/chat:
+    post:
+      summary: Poser une question à l'assistant opérateur (RAG)
+      operationId: chat
+      description: 'Service : rag-assistant. Lecture seule : aucune action sur le système.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string, maxLength: 2000 }
+                incident_id: { type: string, format: uuid, description: Contexte optionnel }
+      responses:
+        '200':
+          description: Réponse et sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer: { type: string }
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        file: { type: string, examples: [docs/procedures/flood.md] }
+                        excerpt: { type: string }
+  /assistant/healthz:
+    get:
+      summary: Liveness
+      security: []
+      responses:
+        '200': { description: OK }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
