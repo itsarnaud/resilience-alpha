@@ -14,7 +14,7 @@
     "prepare": "husky",
     "format": "prettier --write .",
     "check:secrets": "bash scripts/check-secrets.sh",
-    "test": "npm test --workspaces --if-present"
+    "test": "bash scripts/run-tests.sh"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,json,md,yml,yaml,css,html}": "prettier --write"
