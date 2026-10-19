@@ -1,0 +1,91 @@
+# ---- Secrets (jamais en clair dans le dépôt) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.jks
+id_rsa*
+id_ed25519*
+# clé privée age (SOPS) : la clé PUBLIQUE (.sops.yaml) est, elle, versionnée
+keys.txt
+*.agekey
+age-key*.txt
+# Vault : données, jetons, unseal keys
+vault-data/
+.vault-token
+vault-keys.json
+init-keys*.json
+# fichiers déchiffrés temporairement
+*.dec
+*.dec.*
+*.decrypted
+secrets.local.*
+# Ansible
+*.retry
+.vault_pass*
+vault_password*
+# Terraform / divers
+*.tfstate*
+credentials*.json
+
+# ---- Données / ML ----
+ml/data/raw/
+ml/data/*.csv
+ml/data/*.parquet
+ml/models/*.pkl
+ml/models/*.joblib
+ml/models/*.onnx
+*.ipynb_checkpoints/
+# modèles Ollama (lourds)
+*.gguf
+ollama-data/
+chroma-data/
+
+# ---- Données runtime Docker ----
+pgdata/
+postgres-data/
+prometheus-data/
+loki-data/
+grafana-data/
+volumes/
+*.log
+!docs/**/*.log
+
+# ---- Node ----
+node_modules/
+dist/
+build/
+.next/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# ---- Go ----
+bin/
+vendor/
+
+# ---- OS / IDE ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ---- Rendus (générés, pas versionnés) ----
+Workshop2026-M2-G*/
+*.zip
+*.mp4

@@ -1,0 +1,9 @@
+# Règles SOPS. La clé PUBLIQUE age va ici (elle est publique, donc versionnable).
+# La clé privée reste hors dépôt (~/.config/sops/age/keys.txt) et est ignorée par .gitignore.
+#
+# Générer : age-keygen -o ~/.config/sops/age/keys.txt   (afficher la ligne "public key: age1...")
+# Chiffrer : sops --encrypt --in-place infra/secrets/dev.enc.yaml
+creation_rules:
+  - path_regex: infra/secrets/.*\.enc\.ya?ml$
+    age: >-
+      age1REMPLACER_PAR_LA_CLE_PUBLIQUE_DE_L_EQUIPE
