@@ -1,0 +1,29 @@
+{
+  "name": "resilience-alpha",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Plateforme de paiement fictive à reprise autonome (Workshop EPSI M2 2026-27)",
+  "workspaces": [
+    "services/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "check:secrets": "bash scripts/check-secrets.sh",
+    "test": "npm test --workspaces --if-present"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,md,yml,yaml,css,html}": "prettier --write"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3"
+  }
+}

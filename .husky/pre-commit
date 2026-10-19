@@ -1,0 +1,2 @@
+bash scripts/check-secrets.sh --staged
+npx --no-install lint-staged
