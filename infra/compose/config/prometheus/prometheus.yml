@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # Les applis Node.js : apparaîtront "down" tant qu'elles n'exposent pas /metrics
+  # (ex. avec le paquet prom-client)
+  - job_name: applications
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - application:3000
+          - auth:3000
+          - api-paiement:3000
+          - remediation:3000
