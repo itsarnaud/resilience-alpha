@@ -123,7 +123,7 @@ describe('erreurs problem+json', () => {
       .set('Authorization', `Bearer ${token_}`)
       .send({ type: 'BRUTE_FORCE' });
     expect(res.status).toBe(422);
-    expect(res.body.detail).toContain('dedup_key');
+    expect(res.body.detail).toContain('score');
   });
 });
 
@@ -235,6 +235,49 @@ describe('schémas', () => {
         false,
       );
     }
+  });
+});
+
+describe("schéma d'incident", () => {
+  const base = { type: 'BRUTE_FORCE', score: 0.9, detected_at: new Date().toISOString() };
+
+  it('accepte un signalement minimal et applique les valeurs par défaut', () => {
+    const parsed = IncidentReportSchema.parse(base);
+    expect(parsed.targets).toEqual([]);
+    expect(parsed.evidence).toEqual([]);
+    expect(parsed.dedup_key).toBeUndefined();
+  });
+
+  it('accepte comptes visés, statistiques partielles et IP v4 ou v6', () => {
+    const parsed = IncidentReportSchema.parse({
+      ...base,
+      source_ip: '192.168.137.50',
+      targets: ['victime@lab.local'],
+      stats: { attempts: 40, failures: 38 },
+    });
+    expect(parsed.stats).toEqual({ attempts: 40, failures: 38 });
+    expect(IncidentReportSchema.safeParse({ ...base, source_ip: '2001:db8::1' }).success).toBe(
+      true,
+    );
+  });
+
+  it("refuse une IP qui n'en est pas une (injection dans la configuration du WAF)", () => {
+    for (const source_ip of [
+      '1.2.3.4; deny all',
+      '1.2.3.4\ndeny all',
+      'localhost',
+      '999.1.1.1',
+      '',
+    ]) {
+      expect(IncidentReportSchema.safeParse({ ...base, source_ip }).success).toBe(false);
+    }
+  });
+
+  it('refuse un score hors de 0..1 et des statistiques négatives', () => {
+    expect(IncidentReportSchema.safeParse({ ...base, score: 1.2 }).success).toBe(false);
+    expect(IncidentReportSchema.safeParse({ ...base, stats: { failures: -1 } }).success).toBe(
+      false,
+    );
   });
 });
 

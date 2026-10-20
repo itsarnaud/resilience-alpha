@@ -1,6 +1,6 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
-/** Rôles portés par les jetons (utilisateurs et services). */
 export const ROLES = [
   'customer',
   'operator',
@@ -28,35 +28,47 @@ export const INCIDENT_STATES = [
   'VERIFYING',
   'RESOLVED',
   'FAILED',
+  'IGNORED',
 ] as const;
 export const IncidentStateSchema = z.enum(INCIDENT_STATES);
 export type IncidentState = z.infer<typeof IncidentStateSchema>;
 
-/** Corps de `POST /v1/incidents` (envoyé par le détecteur). */
+
+export const IpSchema = z.string().refine((v) => isIP(v) !== 0, { message: 'adresse IP invalide' });
+
 export const IncidentReportSchema = z.object({
-  dedup_key: z.string().min(1).max(200),
+  dedup_key: z.string().min(1).max(200).optional(),
   type: IncidentTypeSchema,
   score: z.number().min(0).max(1),
-  detected_at: z.string().datetime(),
-  target_service: z.string().min(1).optional(),
-  source_ip: z.string().min(3).max(45).nullable().optional(),
+  detected_at: z.iso.datetime(),
+  target_service: z.string().min(1).max(100).optional(),
+  source_ip: IpSchema.nullable().optional(),
+  targets: z.array(z.string().min(1).max(254)).max(100).default([]),
+  stats: z
+    .object({
+      attempts: z.number().int().nonnegative(),
+      failures: z.number().int().nonnegative(),
+      window_seconds: z.number().nonnegative(),
+    })
+    .partial()
+    .optional(),
   evidence: z
     .array(
       z.object({
         kind: z.enum(['promql', 'logql']),
-        query: z.string(),
+        query: z.string().max(2000),
         value: z.number(),
       }),
     )
+    .max(50)
     .default([]),
 });
 export type IncidentReport = z.infer<typeof IncidentReportSchema>;
 
-/** Corps de `POST /api/v1/transactions` : un compte interne OU un IBAN externe. */
 export const TransactionRequestSchema = z
   .object({
-    from_account_id: z.string().uuid(),
-    to_account_id: z.string().uuid().optional(),
+    from_account_id: z.uuid(),
+    to_account_id: z.uuid().optional(),
     to_iban: z.string().min(14).max(34).optional(),
     amount_cents: z.number().int().min(1).max(1_000_000),
     label: z.string().max(140).optional(),
