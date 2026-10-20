@@ -1,0 +1,40 @@
+{
+  "uid": "securite-waf",
+  "title": "Sécurité — WAF & Journaux",
+  "tags": ["resilience-alpha", "securite"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Blocages WAF (403) — 5 min",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 20 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum(count_over_time({container=\"waf\"} |~ `403|ModSecurity` [5m]))" } ]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Volume de journaux par conteneur (/min)",
+      "gridPos": { "h": 9, "w": 18, "x": 6, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 40 } }, "overrides": [] },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "sum by (container) (count_over_time({container=~\".+\"} [1m]))", "legendFormat": "{{container}}" } ]
+    },
+    {
+      "id": 3, "type": "logs", "title": "Journaux WAF en direct",
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 9 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" },
+      "targets": [ { "refId": "A", "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "{container=\"waf\"}" } ]
+    }
+  ]
+}

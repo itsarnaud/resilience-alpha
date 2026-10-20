@@ -1,0 +1,24 @@
+---
+# Playbook de remédiation : redémarre un service applicatif.
+# Déclenché par le moteur de remédiation. Agit via le socket-proxy
+# (variable d'env DOCKER_HOST fournie par docker-compose), jamais le démon en direct.
+- name: Remediation - redemarrage d'un service applicatif
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    target: api-paiement
+  tasks:
+    - name: "Verifier l'acces a l'API Docker"
+      ansible.builtin.command: docker version
+      register: docker_ver
+      changed_when: false
+
+    - name: "Redemarrer le conteneur cible : {{ target }}"
+      ansible.builtin.command: "docker restart {{ target }}"
+      register: restart_res
+      changed_when: restart_res.rc == 0
+
+    - name: Resume
+      ansible.builtin.debug:
+        msg: "Playbook remediation applique : conteneur {{ target }} redemarre."

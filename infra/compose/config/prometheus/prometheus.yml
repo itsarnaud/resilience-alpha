@@ -20,3 +20,39 @@ scrape_configs:
           - auth:3000
           - api-paiement:3000
           - remediation:3000
+
+  - job_name: face
+    static_configs:
+      - targets: ["face:5000"]
+
+  # --- Machines du groupe (windows_exporter sur chaque poste, port 9182) ---
+  - job_name: windows
+    static_configs:
+      - targets: ["host.docker.internal:9182"]
+        labels: { machine: "hote" }
+      # Décommenter et remplacer les IP (réseau 192.168.137.0/24) :
+      # - targets: ["192.168.137.XXX:9182"]
+      #   labels: { machine: "attaquant" }
+      # - targets: ["192.168.137.YYY:9182"]
+      #   labels: { machine: "ia" }
+
+  # --- Disponibilité + latence des machines du groupe (via blackbox, sans agent) ---
+  - job_name: machines-ping
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    static_configs:
+      - targets: ["192.168.137.1"]
+        labels: { machine: "hote" }
+      # Décommenter et remplacer les IP :
+      # - targets: ["192.168.137.XXX"]
+      #   labels: { machine: "attaquant" }
+      # - targets: ["192.168.137.YYY"]
+      #   labels: { machine: "ia" }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

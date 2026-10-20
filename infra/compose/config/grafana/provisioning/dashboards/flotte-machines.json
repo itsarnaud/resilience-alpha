@@ -1,0 +1,90 @@
+{
+  "uid": "flotte-machines",
+  "title": "Flotte — Machines du groupe",
+  "tags": ["resilience-alpha", "flotte"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Machines en ligne (ping)",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "count(probe_success{job=\"machines-ping\"} == 1) or vector(0)" } ]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Disponibilité des machines (1 = en ligne)",
+      "gridPos": { "h": 5, "w": 11, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0, "max": 1,
+        "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 25, "lineWidth": 2 },
+        "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "probe_success{job=\"machines-ping\"}", "legendFormat": "{{machine}}" } ]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Latence réseau par machine (ms)",
+      "gridPos": { "h": 5, "w": 7, "x": 17, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms",
+        "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "probe_duration_seconds{job=\"machines-ping\"} * 1000", "legendFormat": "{{machine}}" } ]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "CPU par machine (%) — nécessite windows_exporter",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100,
+        "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "100 - (avg by (machine) (rate(windows_cpu_time_total{mode=\"idle\"}[1m])) * 100)",
+        "legendFormat": "{{machine}}" } ]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "RAM utilisée par machine (%) — nécessite windows_exporter",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100,
+        "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "(1 - (windows_os_physical_memory_free_bytes / windows_cs_physical_memory_bytes)) * 100",
+        "legendFormat": "{{machine}}" } ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Disque C: libre (Go) — nécessite windows_exporter",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "decgbytes",
+        "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "windows_logical_disk_free_bytes{volume=\"C:\"} / 1073741824",
+        "legendFormat": "{{machine}}" } ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Réseau reçu (o/s) — nécessite windows_exporter",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "Bps",
+        "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "sum by (machine) (rate(windows_net_bytes_received_total[1m]))",
+        "legendFormat": "{{machine}}" } ]
+    }
+  ]
+}
