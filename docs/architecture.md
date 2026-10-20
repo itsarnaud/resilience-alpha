@@ -113,7 +113,7 @@ sequenceDiagram
 Ce que chaque service doit faire pour que ça marche :
 
 - **auth** journalise chaque échec de connexion (IP source, compte visé, horodatage) et expose un compteur `auth_login_failures_total`. Le détecteur s'appuie dessus.
-- **api paiements** accepte les virements vers un IBAN externe (`to_iban`) et applique une règle anti-fraude : bénéficiaire inconnu, compte visé récemment par des échecs de connexion, montant inhabituel. Le refus est un `403` dont le motif est journalisé.
+- **api paiements** accepte les virements vers un IBAN externe (`to_iban`) et applique une règle anti-fraude : bénéficiaire inconnu ou montant au-dessus du plafond (le signal « compte visé par des échecs de connexion » pourra s'y ajouter). Le refus est un `403` dont le motif est journalisé.
 - **remédiation** reçoit l'incident, demande au WAF de bloquer l'IP source pour une durée limitée, puis envoie une transaction de test. Elle ne passe l'incident à `RESOLVED` que si la transaction réussit. Sinon elle essaie une autre action, puis passe en `FAILED`, visible dans le dashboard.
 - **dashboard** suit les états `DETECTED`, `REMEDIATING`, `VERIFYING` puis `RESOLVED` en temps réel.
 

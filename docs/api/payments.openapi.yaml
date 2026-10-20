@@ -12,6 +12,7 @@ paths:
   /v1/accounts:
     get:
       summary: Comptes de l'utilisateur
+      description: Rôles `customer` et `svc:remediation-canary` (le canari lit ses deux comptes).
       operationId: listAccounts
       responses:
         '200':
@@ -21,6 +22,53 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Account' }
+    post:
+      summary: Ouvrir un compte (solde fictif de départ)
+      description: Rôle `customer`. Maximum 5 comptes par client.
+      operationId: openAccount
+      responses:
+        '201':
+          description: Compte ouvert
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /v1/beneficiaries:
+    get:
+      summary: Bénéficiaires connus du client
+      operationId: listBeneficiaries
+      responses:
+        '200':
+          description: Liste
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Beneficiary' }
+    post:
+      summary: Ajouter un bénéficiaire
+      description: |
+        Un virement par IBAN vers un IBAN absent de cette liste est refusé par la règle anti-fraude.
+      operationId: addBeneficiary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [iban, label]
+              properties:
+                iban: { type: string, description: 'Espaces et casse ignorés' }
+                label: { type: string, maxLength: 100 }
+      responses:
+        '201':
+          description: Bénéficiaire ajouté
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Beneficiary' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
   /v1/accounts/{accountId}:
     get:
       summary: Détail et solde
@@ -48,7 +96,9 @@ paths:
           in: header
           required: false
           schema: { type: boolean }
-          description: Réservé au rôle `svc:remediation-canary`.
+          description: |
+            `true` obligatoire pour le rôle `svc:remediation-canary` (qui ne peut virer qu'entre
+            comptes internes), interdit pour tous les autres.
       requestBody:
         required: true
         content:
@@ -67,22 +117,34 @@ paths:
               schema: { $ref: '#/components/schemas/Transaction' }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
-        '402': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: Fonds insuffisants (`reason` = `insufficient_funds`)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '403':
-          {
-            description: 'Refus anti-fraude (le motif figure dans detail et dans les logs)',
-            content:
-              { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } },
-          }
-        '429': { $ref: '#/components/responses/Problem' }
-        '503': { $ref: '#/components/responses/Problem' }
+          description: |
+            Refus. `reason` vaut `unknown_beneficiary` ou `amount_over_limit` (règle anti-fraude,
+            virement par IBAN), ou le refus vient d'un usage interdit de `X-Synthetic`.
+            Le refus est enregistré (statut `REJECTED`), journalisé (`fraud_blocked`) et compté
+            (`payments_fraud_blocked_total`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
     get:
       summary: Historique paginé
       operationId: listTransactions
       parameters:
         - { name: account_id, in: query, schema: { type: string, format: uuid } }
         - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
-        - { name: cursor, in: query, schema: { type: string } }
+        - {
+            name: cursor,
+            in: query,
+            schema: { type: string, format: uuid },
+            description: '`next_cursor` de la page précédente',
+          }
       responses:
         '200':
           description: Page
@@ -116,7 +178,7 @@ paths:
         '200': { description: OK }
   /readyz:
     get:
-      summary: Readiness profonde (DB joignable, JWKS chargé, requête d'écriture de test)
+      summary: Readiness profonde (la base répond à une requête réelle)
       security: []
       responses:
         '200': { description: Prêt }
@@ -155,15 +217,24 @@ components:
         to_iban: { type: string, description: IBAN fictif d'un compte externe }
         amount_cents: { type: integer, minimum: 1, maximum: 1000000 }
         label: { type: string, maxLength: 140 }
+    Beneficiary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        iban: { type: string }
+        label: { type: string }
+        created_at: { type: string, format: date-time }
     Transaction:
       type: object
       properties:
         id: { type: string, format: uuid }
         from_account_id: { type: string, format: uuid }
-        to_account_id: { type: string, format: uuid }
+        to_account_id: { type: [string, 'null'], format: uuid }
+        to_iban: { type: [string, 'null'], description: IBAN d'un compte externe }
         amount_cents: { type: integer }
-        label: { type: string }
+        label: { type: [string, 'null'] }
         status: { type: string, enum: [COMPLETED, REJECTED] }
+        reject_reason: { type: [string, 'null'], examples: [unknown_beneficiary] }
         synthetic: { type: boolean }
         created_at: { type: string, format: date-time }
     Problem:
@@ -174,4 +245,6 @@ components:
         title: { type: string }
         status: { type: integer }
         detail: { type: string }
+        reason:
+          { type: string, description: 'Motif lisible par une machine (ex. unknown_beneficiary)' }
         request_id: { type: string }
