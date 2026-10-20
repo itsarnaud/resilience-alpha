@@ -1,0 +1,133 @@
+# PROJECT RESILIENCE-ALPHA : pile DEV (applications Node.js + bases PostgreSQL)
+# Lancement : docker compose -f docker-compose.dev.yml up -d
+# Prérequis : la pile infra doit être lancée (elle crée les réseaux backend et monitoring).
+
+name: resilience-alpha-dev
+
+# Base commune aux 4 applications Node.js :
+# chaque service monte son dossier apps/<nom> dans /app.
+# Si le dossier contient un package.json -> npm install puis npm start.
+# Sinon le conteneur reste allumé en attendant le code.
+x-node-app: &node-app
+  image: node:20-alpine
+  working_dir: /app
+  restart: unless-stopped
+  command: >
+    sh -c "if [ -f package.json ]; then npm install && npm start;
+           else echo 'Pas de package.json dans /app : en attente du code'; tail -f /dev/null; fi"
+  labels:
+    logging: promtail
+  networks: [backend]
+
+services:
+  # ---------- Applications Node.js ----------
+  application:
+    <<: *node-app
+    container_name: application
+    volumes: [./apps/application:/app]
+    environment:
+      PORT: '3000'
+      DATABASE_URL: postgres://${DB_APP_USER}:${DB_APP_PASSWORD}@db-app:5432/${DB_APP_NAME}
+      AUTH_URL: http://auth:3000
+      PAIEMENT_URL: http://api-paiement:3000
+    depends_on:
+      db-app: { condition: service_healthy }
+    networks: [backend, data]
+
+  auth:
+    <<: *node-app
+    container_name: auth
+    volumes: [./apps/auth:/app]
+    environment:
+      PORT: '3000'
+      DATABASE_URL: postgres://${DB_AUTH_USER}:${DB_AUTH_PASSWORD}@db-auth:5432/${DB_AUTH_NAME}
+    depends_on:
+      db-auth: { condition: service_healthy }
+    networks: [backend, data]
+
+  api-paiement:
+    <<: *node-app
+    container_name: api-paiement
+    volumes: [./apps/api-paiement:/app]
+    environment:
+      PORT: '3000'
+      DATABASE_URL: postgres://${DB_PAIEMENT_USER}:${DB_PAIEMENT_PASSWORD}@db-paiement:5432/${DB_PAIEMENT_NAME}
+    depends_on:
+      db-paiement: { condition: service_healthy }
+    networks: [backend, data]
+
+  # Joint Prometheus (pile infra) et Wazuh (pile cyber) via le réseau partagé monitoring
+  remediation:
+    <<: *node-app
+    container_name: remediation
+    volumes: [./apps/remediation:/app]
+    environment:
+      PORT: '3000'
+      PROMETHEUS_URL: http://prometheus:9090
+      WAZUH_API_URL: https://wazuh-manager:55000
+    networks: [backend, monitoring]
+
+  # ---------- Bases de données PostgreSQL ----------
+  db-app:
+    image: postgres:16-alpine
+    container_name: db-app
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_APP_USER}
+      POSTGRES_PASSWORD: ${DB_APP_PASSWORD}
+      POSTGRES_DB: ${DB_APP_NAME}
+    volumes: [db_app_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      retries: 5
+    networks: [data]
+
+  db-auth:
+    image: postgres:16-alpine
+    container_name: db-auth
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_AUTH_USER}
+      POSTGRES_PASSWORD: ${DB_AUTH_PASSWORD}
+      POSTGRES_DB: ${DB_AUTH_NAME}
+    volumes: [db_auth_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      retries: 5
+    networks: [data]
+
+  db-paiement:
+    image: postgres:16-alpine
+    container_name: db-paiement
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_PAIEMENT_USER}
+      POSTGRES_PASSWORD: ${DB_PAIEMENT_PASSWORD}
+      POSTGRES_DB: ${DB_PAIEMENT_NAME}
+    volumes: [db_paiement_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      retries: 5
+    networks: [data]
+
+networks:
+  backend: # applications entre elles (créé par la pile infra)
+    name: resilience-alpha_backend
+    external: true
+  monitoring: # Prometheus, Loki, Grafana, Wazuh (créé par la pile infra)
+    name: resilience-alpha_monitoring
+    external: true
+  data: # applications <-> bases de données (propre à cette pile)
+    name: resilience-alpha_data
+
+# Noms fixes = mêmes volumes que l'ancien docker-compose.yml (données conservées)
+volumes:
+  db_app_data:
+    name: resilience-alpha_db_app_data
+  db_auth_data:
+    name: resilience-alpha_db_auth_data
+  db_paiement_data:
+    name: resilience-alpha_db_paiement_data

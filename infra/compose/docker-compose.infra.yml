@@ -1,0 +1,90 @@
+# PROJECT RESILIENCE-ALPHA : pile INFRA (observabilité + automatisation)
+# Lancement : docker compose -f docker-compose.infra.yml up -d
+# À lancer EN PREMIER : cette pile crée les réseaux partagés "backend" et "monitoring"
+# utilisés par les piles dev et cyber.
+
+name: resilience-alpha-infra
+
+services:
+  # ---------- Observabilité : métriques ----------
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - '9090:9090'
+    networks: [monitoring, backend]
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.0
+    container_name: node-exporter
+    restart: unless-stopped
+    networks: [monitoring]
+
+  # ---------- Observabilité : logs ----------
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes: [loki_data:/loki]
+    networks: [monitoring]
+
+  # Lit le socket Docker : récupère aussi les logs des conteneurs des piles dev et cyber
+  # (tous ceux qui portent le label logging=promtail)
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./config/promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+    networks: [monitoring]
+
+  # ---------- Observabilité : tableaux de bord ----------
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - '3000:3000'
+    depends_on: [prometheus, loki]
+    networks: [monitoring]
+
+  # ---------- Automatisation : Ansible (nœud de contrôle) ----------
+  # Utilisation : docker compose -f docker-compose.infra.yml exec ansible ansible-playbook playbooks/<fichier>.yml
+  ansible:
+    build: ./ansible
+    container_name: ansible
+    restart: unless-stopped
+    working_dir: /ansible
+    volumes: [./ansible:/ansible]
+    command: sleep infinity
+    networks: [backend, monitoring]
+
+# Réseaux partagés entre les 3 piles : nom fixe pour que dev et cyber les retrouvent
+networks:
+  backend: # applications entre elles
+    name: resilience-alpha_backend
+  monitoring: # Prometheus, Loki, Grafana, Wazuh
+    name: resilience-alpha_monitoring
+
+# Noms fixes = mêmes volumes que l'ancien docker-compose.yml (données conservées)
+volumes:
+  prometheus_data:
+    name: resilience-alpha_prometheus_data
+  loki_data:
+    name: resilience-alpha_loki_data
+  grafana_data:
+    name: resilience-alpha_grafana_data

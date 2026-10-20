@@ -1,0 +1,68 @@
+# PROJECT RESILIENCE-ALPHA : pile CYBERSÉCURITÉ (WAF + SIEM)
+# Lancement : docker compose -f docker-compose.cyber.yml up -d
+# Prérequis : piles infra puis dev lancées (le WAF redirige vers "application").
+
+name: resilience-alpha-cyber
+
+services:
+  # ---------- Entrée : WAF (Nginx + ModSecurity + règles OWASP CRS) ----------
+  # Pas de depends_on vers "application" : elle est dans la pile dev
+  # (depends_on ne fonctionne pas entre deux projets Compose).
+  waf:
+    image: owasp/modsecurity-crs:nginx-alpine
+    container_name: waf
+    restart: unless-stopped
+    environment:
+      BACKEND: http://application:3000 # tout le trafic passe par le WAF vers l'application
+      PORT: '8080'
+      MODSEC_RULE_ENGINE: 'On' # "DetectionOnly" pour seulement journaliser
+      PARANOIA: '1'
+    ports:
+      - '80:8080'
+    labels:
+      logging: promtail
+    networks: [frontend, backend]
+
+  # ---------- SIEM : Wazuh manager ----------
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.11.0
+    container_name: wazuh-manager
+    hostname: wazuh-manager
+    restart: unless-stopped
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 655360, hard: 655360 }
+    environment:
+      API_USERNAME: ${WAZUH_API_USER}
+      API_PASSWORD: ${WAZUH_API_PASSWORD}
+    ports:
+      - '1514:1514' # communication avec les agents
+      - '1515:1515' # enrôlement des agents
+      - '55000:55000' # API Wazuh
+    volumes:
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_api:/var/ossec/api/configuration
+    networks: [monitoring, backend]
+
+networks:
+  frontend: # exposé : seul le WAF y est (propre à cette pile)
+    name: resilience-alpha_frontend
+  backend: # applications entre elles (créé par la pile infra)
+    name: resilience-alpha_backend
+    external: true
+  monitoring: # Prometheus, Loki, Grafana, Wazuh (créé par la pile infra)
+    name: resilience-alpha_monitoring
+    external: true
+
+# Noms fixes = mêmes volumes que l'ancien docker-compose.yml (données conservées)
+volumes:
+  wazuh_etc:
+    name: resilience-alpha_wazuh_etc
+  wazuh_logs:
+    name: resilience-alpha_wazuh_logs
+  wazuh_queue:
+    name: resilience-alpha_wazuh_queue
+  wazuh_api:
+    name: resilience-alpha_wazuh_api
