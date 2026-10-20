@@ -1,0 +1,65 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TransactionStatus {
+  COMPLETED
+  REJECTED
+}
+
+model Account {
+  id           String        @id @default(uuid()) @db.Uuid
+  ownerId      String        @map("owner_id")
+  iban         String        @unique
+  balanceCents Int           @map("balance_cents")
+  currency     String        @default("EUR")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  outgoing     Transaction[] @relation("from")
+  incoming     Transaction[] @relation("to")
+
+  @@index([ownerId])
+  @@map("accounts")
+}
+
+model Beneficiary {
+  id        String   @id @default(uuid()) @db.Uuid
+  ownerId   String   @map("owner_id")
+  iban      String
+  label     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([ownerId, iban])
+  @@map("beneficiaries")
+}
+
+/// Journal des virements
+model Transaction {
+  id             String            @id @default(uuid()) @db.Uuid
+  fromAccountId  String            @map("from_account_id") @db.Uuid
+  toAccountId    String?           @map("to_account_id") @db.Uuid
+  toIban         String?           @map("to_iban")
+  amountCents    Int               @map("amount_cents")
+  label          String?
+  status         TransactionStatus
+  rejectReason   String?           @map("reject_reason")
+  synthetic      Boolean           @default(false)
+  createdBy      String            @map("created_by")
+  /// Renseignée uniquement pour les virements exécutés : les refus ne la consomment pas.
+  idempotencyKey String?           @map("idempotency_key")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  from           Account           @relation("from", fields: [fromAccountId], references: [id])
+  to             Account?          @relation("to", fields: [toAccountId], references: [id])
+
+  @@unique([createdBy, idempotencyKey])
+  @@index([fromAccountId, createdAt])
+  @@index([toAccountId, createdAt])
+  @@map("transactions")
+}
