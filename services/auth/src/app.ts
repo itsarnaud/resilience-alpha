@@ -8,7 +8,7 @@ import router from './router.js';
 const app = express();
 
 app.disable('x-powered-by');
-// Derrière le WAF : l'adresse réelle du client vient de X-Forwarded-For.
+// WAF : adresse réelle du client vient de X-Forwarded-For.
 app.set(
   'trust proxy',
   config.TRUST_PROXY.split(',').map((s) => s.trim()),

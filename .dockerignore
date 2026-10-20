@@ -4,9 +4,12 @@
 **/node_modules
 **/dist
 **/src/generated
-.env
-.env.*
-!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/keys
 docs
 ml
 infra

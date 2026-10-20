@@ -10,6 +10,7 @@ const ConfigSchema = z.object({
   JWT_ISSUER: z.string().default('resilience-auth'),
   JWT_AUDIENCE: z.string().default('resilience-platform'),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(10),
   TRUST_PROXY: z.string().default('loopback,uniquelocal'),
 });
 

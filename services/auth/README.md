@@ -32,7 +32,7 @@ src/
 ├── services/         logique métier : AuthServices, UsersServices
 ├── middlewares/      auth : exige un JWT valide
 ├── schemas/          corps de requête (zod)
-├── lib/              config, logger, prisma, keys (JWT), password (scrypt),
+├── lib/              config, logger, prisma, keys (JWT), password (bcrypt),
 │                     metrics, roles, context
 └── scripts/          seed (données de démonstration)
 prisma/               schéma et migrations
@@ -41,22 +41,27 @@ test/                 tests d'intégration
 
 ## Configuration
 
-Voir [`.env.example`](.env.example). Prisma 7 ne lit pas les fichiers `.env` : les variables doivent venir de l'environnement (compose, shell, ou `node --env-file=.env`).
+Copier [`.env.example`](.env.example) en `.env` (ignoré par git et par Docker, ne jamais le committer). Dans Docker, les variables viennent de l'environnement du conteneur.
 
 En production, `JWT_PRIVATE_KEY` (ou `JWT_PRIVATE_KEY_FILE`) est obligatoire. Sans clé en développement, une clé éphémère est générée : les jetons ne survivent pas à un redémarrage. Générer une clé :
 
 ```bash
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt.pem   # ne jamais committer
+mkdir -p keys && openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out keys/jwt.pem   # ignoré par git
 ```
 
 ## Développement
 
+Première fois :
+
 ```bash
-export DATABASE_URL=postgresql://user:pass@localhost:5432/auth
-npx prisma migrate deploy -w services/auth   # applique les migrations
-npm run dev -w services/auth                 # démarre avec rechargement
-npm run build -w services/auth               # génère le client Prisma puis compile
+npm run db:up -w services/auth      # démarre PostgreSQL (conteneur auth-db, port 54329)
+npm run db:init -w services/auth    # crée les bases auth_dev et auth_test
+(cd services/auth && npx prisma migrate deploy)                                                  # migre auth_dev
+(cd services/auth && DATABASE_URL=postgresql://postgres:test@localhost:54329/auth_test npx prisma migrate deploy)   # migre auth_test
+npm run seed:dev -w services/auth   # comptes de démonstration
 ```
+
+Ensuite : `npm run db:up -w services/auth` puis `npm run dev -w services/auth`. `db:down` supprime le conteneur et ses données.
 
 Changer le schéma : modifier `prisma/schema.prisma`, puis `npx prisma migrate dev --name <nom>` depuis `services/auth`. Prisma 7 ne régénère plus le client automatiquement : `npm run generate -w services/auth` (le `build`, `typecheck` et `test` le font déjà).
 
@@ -79,13 +84,11 @@ docker exec <conteneur> node dist/scripts/seed.js   # dans l'image
 
 ## Tests
 
-Les tests d'intégration ont besoin d'une base PostgreSQL migrée. Sans `TEST_DATABASE_URL`, ils sont ignorés (le hook `pre-push` ne dépend donc pas de Docker).
+Les tests d'intégration ont besoin de la base `auth_test` migrée (voir plus haut) et de `TEST_DATABASE_URL` dans `.env`. Sans cette variable, ils sont ignorés. Avec elle, ils échouent si la base n'est pas démarrée : lancer `npm run db:up -w services/auth` avant `npm test` (et avant un `git push`, car le hook `pre-push` lance les tests).
 
 ```bash
-docker run -d --name auth-test-db -e POSTGRES_PASSWORD=test -e POSTGRES_DB=auth_test -p 54329:5432 postgres:16-alpine
-export DATABASE_URL=postgresql://postgres:test@localhost:54329/auth_test
-(cd services/auth && npx prisma migrate deploy)
-TEST_DATABASE_URL=$DATABASE_URL npm test -w services/auth
+npm run db:up -w services/auth
+npm test -w services/auth
 ```
 
 ## Docker
@@ -103,5 +106,5 @@ L'image applique les migrations au démarrage puis lance le service. Elle a un `
 - **Pas de verrouillage de compte ni de limitation de débit.** Volontaire pour le scénario de démonstration : le brute force doit pouvoir aboutir, il est détecté par le ML et traité par la remédiation (blocage de l'IP dans le WAF). Un service de production ajouterait ces protections.
 - Le même message d'erreur et le même temps de réponse sont renvoyés pour un compte inconnu et un mauvais mot de passe.
 - L'IP vient de `X-Forwarded-For`, mais seule l'adresse ajoutée par le proxy de confiance est retenue (`TRUST_PROXY`) : un en-tête forgé par l'attaquant est ignoré.
-- Les mots de passe sont hachés avec scrypt et ne sont jamais journalisés.
+- Les mots de passe sont hachés avec bcrypt (sel intégré à l'empreinte, coût réglable avec `BCRYPT_ROUNDS`, 10 par défaut) et ne sont jamais journalisés. bcrypt ignore ce qui dépasse 72 octets : l'inscription refuse les mots de passe plus longs.
 - Chaque tentative est enregistrée dans la table `login_attempts` (compte visé, IP, résultat) en plus du log JSON.

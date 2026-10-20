@@ -19,9 +19,6 @@ const toResponse = (access_token: string): TokenResponse => ({
   expires_in: signer.ttlSeconds,
 });
 
-// Choix assumé pour le laboratoire : pas de verrouillage de compte ni de limitation de débit
-// ici. Le brute force est détecté par le détecteur ML et traité par la remédiation (blocage
-// de l'IP dans le WAF). Un vrai service de production ajouterait ces protections.
 export const login = async (
   rawEmail: string,
   password: string,
@@ -29,7 +26,6 @@ export const login = async (
 ): Promise<TokenResponse> => {
   const email = rawEmail.toLowerCase().trim();
   const user = await prisma.user.findUnique({ where: { email } });
-  // Toujours vérifier une empreinte, même si le compte n'existe pas (temps de réponse constant).
   const valid = await verifyPassword(password, user?.passwordHash ?? (await getDummyHash()));
 
   if (!user || !valid) {

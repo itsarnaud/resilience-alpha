@@ -1,11 +1,3 @@
-/**
- * Tests d'intégration : nécessitent une base PostgreSQL migrée (TEST_DATABASE_URL).
- * Sans cette variable, la suite est ignorée (le hook pre-push ne dépend pas de Docker).
- *
- *   docker run -d --name auth-test-db -e POSTGRES_PASSWORD=test -e POSTGRES_DB=auth_test -p 54329:5432 postgres:16-alpine
- *   DATABASE_URL=postgresql://postgres:test@localhost:54329/auth_test npx prisma migrate deploy
- *   TEST_DATABASE_URL=postgresql://postgres:test@localhost:54329/auth_test npm test -w services/auth
- */
 import { createLocalJWKSet } from 'jose';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,13 +20,11 @@ vi.mock('../src/lib/logger.js', () => {
 });
 
 const DB_URL = process.env.TEST_DATABASE_URL;
-// La configuration est lue à l'import des modules : à définir avant l'import dynamique de l'app.
 process.env.DATABASE_URL = DB_URL ?? 'postgresql://inutilise';
 
 const ISSUER = 'resilience-auth';
 const AUDIENCE = 'resilience-platform';
 
-/** Valeur courante d'une série Prometheus (0 si elle n'existe pas encore). */
 function metricValue(text: string, series: string): number {
   const line = text.split('\n').find((l) => l.startsWith(series));
   return line ? Number(line.split(' ').pop()) : 0;
@@ -43,7 +33,7 @@ function metricValue(text: string, series: string): number {
 describe('hachage des mots de passe', () => {
   it('vérifie le bon mot de passe et rejette les autres', async () => {
     const hash = await hashPassword('correct horse battery');
-    expect(hash).toMatch(/^scrypt\$/);
+    expect(hash).toMatch(/^\$2[aby]\$\d{2}\$/);
     expect(await verifyPassword('correct horse battery', hash)).toBe(true);
     expect(await verifyPassword('mauvais', hash)).toBe(false);
     expect(await verifyPassword('x', 'format-invalide')).toBe(false);
@@ -112,6 +102,14 @@ describe.skipIf(!DB_URL)('service auth (base de données)', () => {
         .post('/v1/register')
         .send({ email: 'alice@example.com', password: 'un-mot-de-passe-long' });
       expect(dup.status).toBe(409);
+    });
+
+    it('refuse un mot de passe de plus de 72 octets (limite de bcrypt)', async () => {
+      const res = await request(app)
+        .post('/v1/register')
+        .send({ email: 'long@example.com', password: 'é'.repeat(40) });
+      expect(res.status).toBe(422);
+      expect(res.body.detail).toContain('72 octets');
     });
 
     it('refuse un mot de passe de moins de 12 caractères', async () => {

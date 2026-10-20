@@ -9,7 +9,6 @@ export const register = async (req: Request, res: Response) => {
 };
 
 export const me = async (req: Request, res: Response) => {
-  // le middleware auth a déjà rempli req.auth
   const { sub, roles } = req.auth!;
   res.json(await UsersServices.getProfile(sub, roles));
 };
