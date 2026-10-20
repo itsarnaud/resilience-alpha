@@ -13,9 +13,6 @@
     "pretest": "prisma generate",
     "test": "vitest run",
     "migrate": "prisma migrate deploy",
-    "db:up": "docker start auth-db 2>/dev/null || docker run -d --name auth-db -e POSTGRES_PASSWORD=test -p 54329:5432 postgres:16-alpine",
-    "db:init": "docker exec auth-db psql -U postgres -c \"CREATE DATABASE auth_dev\" -c \"CREATE DATABASE auth_test\"",
-    "db:down": "docker rm -f auth-db",
     "seed": "node dist/scripts/seed.js",
     "seed:dev": "tsx --env-file=.env src/scripts/seed.ts"
   },

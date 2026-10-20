@@ -54,14 +54,14 @@ mkdir -p keys && openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -o
 Première fois :
 
 ```bash
-npm run db:up -w services/auth      # démarre PostgreSQL (conteneur auth-db, port 54329)
-npm run db:init -w services/auth    # crée les bases auth_dev et auth_test
+npm run db:up      # démarre PostgreSQL (conteneur `dev-db` partagé par tous les services, port 54329)
+npm run db:init    # crée les bases de dev et de test de tous les services
 (cd services/auth && npx prisma migrate deploy)                                                  # migre auth_dev
 (cd services/auth && DATABASE_URL=postgresql://postgres:test@localhost:54329/auth_test npx prisma migrate deploy)   # migre auth_test
 npm run seed:dev -w services/auth   # comptes de démonstration
 ```
 
-Ensuite : `npm run db:up -w services/auth` puis `npm run dev -w services/auth`. `db:down` supprime le conteneur et ses données.
+Ensuite : `npm run db:up` puis `npm run dev -w services/auth`. `npm run db:down` (racine) supprime le conteneur et ses données.
 
 Changer le schéma : modifier `prisma/schema.prisma`, puis `npx prisma migrate dev --name <nom>` depuis `services/auth`. Prisma 7 ne régénère plus le client automatiquement : `npm run generate -w services/auth` (le `build`, `typecheck` et `test` le font déjà).
 
@@ -84,10 +84,10 @@ docker exec <conteneur> node dist/scripts/seed.js   # dans l'image
 
 ## Tests
 
-Les tests d'intégration ont besoin de la base `auth_test` migrée (voir plus haut) et de `TEST_DATABASE_URL` dans `.env`. Sans cette variable, ils sont ignorés. Avec elle, ils échouent si la base n'est pas démarrée : lancer `npm run db:up -w services/auth` avant `npm test` (et avant un `git push`, car le hook `pre-push` lance les tests).
+Les tests d'intégration ont besoin de la base `auth_test` migrée (voir plus haut) et de `TEST_DATABASE_URL` dans `.env`. Sans cette variable, ils sont ignorés. Avec elle, ils échouent si la base n'est pas démarrée : lancer `npm run db:up` avant `npm test` (et avant un `git push`, car le hook `pre-push` lance les tests).
 
 ```bash
-npm run db:up -w services/auth
+npm run db:up
 npm test -w services/auth
 ```
 
