@@ -9,7 +9,7 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages packages
 COPY services services
 
-# pas de hooks husky dans l'image
+# pas de scripts d'installation dans l'image (la compilation est explicite ci-dessous)
 RUN npm ci --ignore-scripts \
  && npm run build -w packages/shared \
  && npm run build -w services/auth \

@@ -11,7 +11,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "prepare": "husky && npm run build:shared",
+    "prepare": "npm run build:shared",
     "build:shared": "npm run build -w packages/shared",
     "format": "prettier --write .",
     "check:secrets": "bash scripts/check-secrets.sh",
@@ -21,14 +21,7 @@
     "docs:api": "docker compose -f docs/docker-compose.yml up",
     "test": "bash scripts/run-tests.sh"
   },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx,json,md,yml,yaml,css,html}": "prettier --write"
-  },
   "devDependencies": {
-    "@commitlint/cli": "^19.5.0",
-    "@commitlint/config-conventional": "^19.5.0",
-    "husky": "^9.1.6",
-    "lint-staged": "^15.2.10",
     "prettier": "^3.3.3"
   }
 }

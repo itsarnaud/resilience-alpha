@@ -36,7 +36,7 @@ Puis ouvrir http://localhost:8081 (Swagger UI, menu déroulant en haut à droite
 - PC Hôte : Windows 10/11, Docker Desktop + WSL2, 16 Go RAM, point d'accès mobile `RESILIENCE-G<n>` (hôte en `192.168.137.1`)
 - PC Attaquant : poste distinct sur le même réseau
 - Outils : Node.js 22+, `sops`, `age`, `ansible`
-- Après le clone : `npm install` à la racine. Cela installe les hooks git **et compile `packages/shared`** (utilisé compilé par tous les services). Après une modification de `packages/shared` : `npm run build:shared`, ou `npm run dev -w packages/shared` pour recompiler en continu.
+- Après le clone : `npm install` à la racine. Cela compile `packages/shared` (utilisé compilé par tous les services). Après une modification de `packages/shared` : `npm run build:shared`, ou `npm run dev -w packages/shared` pour recompiler en continu.
 
 ## Démarrage (à compléter au fil des sprints)
 
@@ -46,7 +46,7 @@ cp .env.example .env # NE JAMAIS committer .env
 
 ## Règles de commit
 
-Les messages suivent [Conventional Commits](https://www.conventionalcommits.org/fr/v1.0.0/), vérifiés par commitlint (hook `commit-msg`).
+Les messages suivent [Conventional Commits](https://www.conventionalcommits.org/fr/v1.0.0/), par convention (aucune vérification automatique).
 
 ```
 <type>(<scope optionnel>): <description courte à l'impératif, 100 caractères max>
@@ -70,13 +70,10 @@ Scopes conseillés : `api`, `auth`, `remediation`, `dashboard`, `front`, `shared
 
 Exemples : `feat(api): add idempotency key on transactions`, `fix(remediation): verify canary before RESOLVED`, `chore: init monorepo structure`.
 
-Hooks installés par `npm install` (husky) :
+Avant de pousser, à lancer à la main :
 
-- `pre-commit` : contrôle des secrets sur les fichiers indexés, puis Prettier sur les fichiers modifiés ;
-- `commit-msg` : commitlint ;
-- `pre-push` : tests des workspaces (`npm test`).
-
-Un commit refusé par un hook se corrige, il ne se contourne pas avec `--no-verify`.
+- `npm run check:secrets` : aucun secret en clair dans le dépôt ;
+- `npm test` : les tests de tous les workspaces (les tests d'intégration demandent `npm run db:up`).
 
 ## Rendus
 
