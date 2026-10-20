@@ -36,7 +36,7 @@ Puis ouvrir http://localhost:8081 (Swagger UI, menu déroulant en haut à droite
 - PC Hôte : Windows 10/11, Docker Desktop + WSL2, 16 Go RAM, point d'accès mobile `RESILIENCE-G<n>` (hôte en `192.168.137.1`)
 - PC Attaquant : poste distinct sur le même réseau
 - Outils : Node.js 22+, `sops`, `age`, `ansible`
-- Après le clone : `npm install` à la racine (installe aussi les hooks git)
+- Après le clone : `npm install` à la racine. Cela installe les hooks git **et compile `packages/shared`** (utilisé compilé par tous les services). Après une modification de `packages/shared` : `npm run build:shared`, ou `npm run dev -w packages/shared` pour recompiler en continu.
 
 ## Démarrage (à compléter au fil des sprints)
 

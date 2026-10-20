@@ -11,7 +11,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "prepare": "husky",
+    "prepare": "husky && npm run build:shared",
+    "build:shared": "npm run build -w packages/shared",
     "format": "prettier --write .",
     "check:secrets": "bash scripts/check-secrets.sh",
     "db:up": "bash scripts/dev-db.sh up",
