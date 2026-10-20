@@ -69,9 +69,48 @@ services:
     container_name: ansible
     restart: unless-stopped
     working_dir: /ansible
+    environment:
+      DOCKER_HOST: tcp://docker-socket-proxy:2375   # les playbooks agissent via le socket-proxy
     volumes: [./ansible:/ansible]
     command: sleep infinity
-    networks: [backend, monitoring]
+    networks: [backend, monitoring, remediation]
+
+  # ---------- Supervision des machines du groupe (ping, sans agent) ----------
+  blackbox:
+    image: prom/blackbox-exporter:v0.26.0
+    container_name: blackbox
+    restart: unless-stopped
+    command: --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./config/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    cap_add:
+      - NET_RAW
+    networks: [monitoring]
+
+  # ---------- Broker MQTT (objet connecté ESP8266 / LED d'authentification) ----------
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "1883:1883"   # publié : l'ESP8266 s'y connecte (IP du PC Hôte sur le PA)
+    networks: [backend]
+
+  # ---------- Accès Docker contrôlé pour le moteur de remédiation ----------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      POST: "1"
+      ALLOW_RESTARTS: "1"
+      EXEC: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [remediation]
 
 # Réseaux partagés entre les 3 piles : nom fixe pour que dev et cyber les retrouvent
 networks:
@@ -79,6 +118,8 @@ networks:
     name: resilience-alpha_backend
   monitoring: # Prometheus, Loki, Grafana, Wazuh
     name: resilience-alpha_monitoring
+  remediation: # moteur de remédiation <-> socket-proxy (isolé)
+    name: resilience-alpha_remediation
 
 # Noms fixes = mêmes volumes que l'ancien docker-compose.yml (données conservées)
 volumes:

@@ -41,6 +41,9 @@ services:
     environment:
       PORT: '3000'
       DATABASE_URL: postgres://${DB_AUTH_USER}:${DB_AUTH_PASSWORD}@db-auth:5432/${DB_AUTH_NAME}
+      FACE_URL: http://face:5000
+      MQTT_URL: mqtt://mosquitto:1883
+      LED_TOPIC: resilience/led
     depends_on:
       db-auth: { condition: service_healthy }
     networks: [backend, data]
@@ -65,6 +68,25 @@ services:
       PORT: '3000'
       PROMETHEUS_URL: http://prometheus:9090
       WAZUH_API_URL: https://wazuh-manager:55000
+      SOCKET_PROXY_HOST: docker-socket-proxy
+      SOCKET_PROXY_PORT: "2375"
+      TARGET_CONTAINER: api-paiement
+      TARGET_URL: http://api-paiement:3000
+      POLL_MS: "5000"
+      REMEDIATION_MODE: ansible          # "ansible" (playbook) ou "docker" (restart direct)
+      ANSIBLE_CONTAINER: ansible
+      ANSIBLE_PLAYBOOK: playbooks/remediation.yml
+    networks: [backend, monitoring, remediation]
+
+  # ---------- IA : reconnaissance faciale (MFA back-office) ----------
+  face:
+    build: ./face
+    container_name: face
+    restart: unless-stopped
+    environment:
+      FACE_THRESHOLD: "0.6"
+    volumes:
+      - face_data:/data
     networks: [backend, monitoring]
 
   # ---------- Bases de données PostgreSQL ----------
@@ -122,9 +144,14 @@ networks:
     external: true
   data: # applications <-> bases de données (propre à cette pile)
     name: resilience-alpha_data
+  remediation: # moteur de remédiation <-> socket-proxy (créé par la pile infra)
+    name: resilience-alpha_remediation
+    external: true
 
 # Noms fixes = mêmes volumes que l'ancien docker-compose.yml (données conservées)
 volumes:
+  face_data:
+    name: resilience-alpha_face_data
   db_app_data:
     name: resilience-alpha_db_app_data
   db_auth_data:
