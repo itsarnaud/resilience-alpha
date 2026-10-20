@@ -1,0 +1,73 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum IncidentState {
+  DETECTED
+  REMEDIATING
+  VERIFYING
+  RESOLVED
+  FAILED
+  IGNORED
+}
+
+model Incident {
+  id            String        @id @default(uuid()) @db.Uuid
+  dedupKey      String        @map("dedup_key")
+  type          String
+  state         IncidentState @default(DETECTED)
+  score         Float
+  targetService String?       @map("target_service")
+  sourceIp      String?       @map("source_ip")
+  targets       String[]
+  stats         Json?
+  evidence      Json          @default("[]")
+  playbook      String?
+  failureReason String?       @map("failure_reason")
+  detectedAt    DateTime      @map("detected_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  resolvedAt    DateTime?     @map("resolved_at")
+  actions       Action[]
+  blocks        IpBlock[]
+
+  @@index([dedupKey, createdAt])
+  @@index([state])
+  @@map("incidents")
+}
+
+model Action {
+  id         String   @id @default(uuid()) @db.Uuid
+  incidentId String   @map("incident_id") @db.Uuid
+  at         DateTime @default(now())
+  step       String
+  ok         Boolean
+  detail     String
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId, at])
+  @@index([step, ok, at])
+  @@map("actions")
+}
+
+model IpBlock {
+  id         String    @id @default(uuid()) @db.Uuid
+  ip         String
+  incidentId String    @map("incident_id") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+  expiresAt  DateTime  @map("expires_at")
+  releasedAt DateTime? @map("released_at")
+  incident   Incident  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([releasedAt, expiresAt])
+  @@index([ip])
+  @@map("ip_blocks")
+}

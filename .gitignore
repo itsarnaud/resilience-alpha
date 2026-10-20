@@ -92,3 +92,6 @@ Workshop2026-M2-G*/
 
 # Client Prisma généré
 **/src/generated/
+
+# Liste de blocage générée en local par la remédiation
+services/remediation/waf/
