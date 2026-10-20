@@ -3,17 +3,28 @@ info:
   title: RESILIENCE-ALPHA remediation
   version: 0.1.0
   description: |
-    Moteur de remédiation. Réseau `control`, non routé par le WAF.
-    Écriture réservée à `svc:detector`. Lecture réservée à `operator` et `svc:dashboard`.
+    Moteur de remédiation. Réseau interne, non routé par le WAF.
+    Écriture (`POST /v1/incidents`) réservée à `svc:detector`. Lecture réservée à `operator` et
+    `svc:dashboard`. Le détecteur obtient son jeton auprès d'`auth` : `POST /v1/token` avec le
+    client `svc-detector` (le jeton expire au bout de 15 minutes, en redemander un à ce moment).
+
+    **Le score est un indice, pas une certitude.** La remédiation n'agit pas sur le score seul :
+    en dessous de `MIN_SCORE` (0,6 par défaut), ou pour un brute force avec moins de `MIN_FAILURES`
+    échecs observés (5 par défaut), l'incident est enregistré à l'état `IGNORED` sans action.
 servers:
-  - url: http://remediation:8000
+  - url: http://remediation:3000
 security: [{ bearer: [] }]
 paths:
   /v1/incidents:
     post:
       summary: Signaler un incident détecté (appelé uniquement par ml-detector)
       operationId: createIncident
-      description: Rôle requis `svc:detector`. Idempotent sur `dedup_key`.
+      description: |
+        Rôle requis `svc:detector`. Répond tout de suite (`202`), la remédiation continue en arrière-plan :
+        suivre l'avancement avec `GET /v1/incidents/{id}` ou le flux `/v1/incidents/stream`.
+
+        Idempotent sur `dedup_key` (par défaut `<type>:<source_ip>`) : un incident déjà en cours, ou
+        résolu depuis moins de 60 s, est renvoyé tel quel avec `200`.
       requestBody:
         required: true
         content:
@@ -21,12 +32,12 @@ paths:
             schema: { $ref: '#/components/schemas/IncidentReport' }
       responses:
         '202':
-          description: Incident accepté, remédiation lancée
+          description: Incident enregistré. Remédiation lancée, ou `IGNORED` si la politique n'agit pas.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Incident' }
         '200':
-          description: Incident déjà en cours (dédoublonné)
+          description: Incident déjà connu (dédoublonné)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Incident' }
@@ -62,11 +73,15 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
   /v1/incidents/stream:
     get:
-      summary: Flux SSE des changements d'état (dashboard)
+      summary: Flux temps réel (SSE) des incidents
       operationId: streamIncidents
+      description: |
+        À la connexion, un événement `snapshot` (les 20 derniers incidents), puis un événement
+        `incident` à chaque nouvelle étape ou changement d'état. `EventSource` ne sait pas envoyer
+        d'en-tête `Authorization` : lire ce flux avec `fetch` et son `ReadableStream`.
       responses:
         '200':
-          description: text/event-stream ; chaque événement est un Incident JSON
+          description: 'text/event-stream. Chaque événement `incident` est un Incident JSON ; `snapshot` est une liste.'
           content:
             text/event-stream:
               schema: { type: string }
@@ -82,6 +97,18 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Playbook' }
+  /v1/blocks:
+    get:
+      summary: IP actuellement bloquées dans le WAF
+      operationId: listBlocks
+      responses:
+        '200':
+          description: Blocages actifs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IpBlock' }
   /v1/services:
     get:
       summary: État courant des services supervisés (santé + dernière canari)
@@ -100,6 +127,19 @@ paths:
       security: []
       responses:
         '200': { description: OK }
+  /readyz:
+    get:
+      summary: Disponibilité (la base répond)
+      security: []
+      responses:
+        '200': { description: Prêt }
+        '503': { description: Non prêt }
+  /metrics:
+    get:
+      summary: Métriques Prometheus (réseau interne, non routé par le WAF)
+      security: []
+      responses:
+        '200': { description: text/plain }
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -123,25 +163,60 @@ components:
         ]
     IncidentState:
       type: string
-      enum: [DETECTED, REMEDIATING, VERIFYING, RESOLVED, FAILED]
+      description: |
+        `DETECTED`, `REMEDIATING`, `VERIFYING`, puis `RESOLVED` (reprise confirmée par la transaction de
+        test) ou `FAILED` (jamais silencieux : la raison est dans `failure_reason`). `IGNORED` : la
+        politique n'a pas jugé le signal suffisant pour agir.
+      enum: [DETECTED, REMEDIATING, VERIFYING, RESOLVED, FAILED, IGNORED]
     IncidentReport:
       type: object
-      required: [dedup_key, type, score, detected_at]
+      required: [type, score, detected_at]
       properties:
-        dedup_key: { type: string, description: 'ex. HTTP_FLOOD:api:203.0.113.5' }
+        dedup_key:
+          {
+            type: string,
+            maxLength: 200,
+            description: 'Facultatif. Par défaut `<type>:<source_ip>`, ex. BRUTE_FORCE:203.0.113.5',
+          }
         type: { $ref: '#/components/schemas/IncidentType' }
-        score: { type: number, minimum: 0, maximum: 1, description: Score d'anomalie normalisé }
+        score:
+          {
+            type: number,
+            minimum: 0,
+            maximum: 1,
+            description: "Score d'anomalie. Un indice, pas une certitude d'attaque.",
+          }
         detected_at: { type: string, format: date-time }
         target_service: { type: string, examples: [api] }
-        source_ip: { type: [string, 'null'] }
+        source_ip:
+          type: [string, 'null']
+          description: |
+            IPv4 ou IPv6, et rien d'autre (validé strictement : cette valeur est écrite dans la liste de
+            blocage du WAF). Les IP protégées (hôte, boucle locale) ne sont jamais bloquées.
+          examples: ['203.0.113.9']
+        targets:
+          type: array
+          description: Comptes visés (par exemple les identifiants attaqués en brute force)
+          maxItems: 100
+          items: { type: string, maxLength: 254 }
+          examples: [['victime@lab.local']]
+        stats:
+          type: object
+          description: Chiffres observés qui expliquent l'alerte
+          properties:
+            attempts: { type: integer, minimum: 0, description: Tentatives observées }
+            failures: { type: integer, minimum: 0, description: dont échecs }
+            window_seconds: { type: number, minimum: 0, description: Durée observée }
         evidence:
           type: array
           description: Requêtes ayant justifié la détection
+          maxItems: 50
           items:
             type: object
+            required: [kind, query, value]
             properties:
               kind: { type: string, enum: [promql, logql] }
-              query: { type: string }
+              query: { type: string, maxLength: 2000 }
               value: { type: number }
     Incident:
       type: object
@@ -150,20 +225,36 @@ components:
         type: { $ref: '#/components/schemas/IncidentType' }
         state: { $ref: '#/components/schemas/IncidentState' }
         score: { type: number }
-        target_service: { type: string }
+        target_service: { type: [string, 'null'] }
         source_ip: { type: [string, 'null'] }
+        targets: { type: array, items: { type: string } }
+        stats: { type: [object, 'null'] }
+        playbook: { type: [string, 'null'], examples: [block_source] }
+        failure_reason: { type: [string, 'null'] }
         detected_at: { type: string, format: date-time }
         resolved_at: { type: [string, 'null'], format: date-time }
-        time_to_recover_seconds: { type: [number, 'null'] }
+        time_to_recover_seconds:
+          { type: [number, 'null'], description: Détection jusqu'à la reprise confirmée }
         timeline:
           type: array
+          description: Chaque étape exécutée, dans l'ordre
           items:
             type: object
             properties:
               at: { type: string, format: date-time }
-              step: { type: string, examples: [block_source, canary_transaction] }
+              step:
+                type: string
+                examples: [validate_ip, block_ip, verify_ready, canary_transaction]
               ok: { type: boolean }
               detail: { type: string }
+    IpBlock:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ip: { type: string }
+        incident_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
     Playbook:
       type: object
       properties:
