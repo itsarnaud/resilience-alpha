@@ -12,6 +12,7 @@ packages/      DEV    shared (schémas zod, types, client HTTP typé)
 infra/         INFRA  compose/, ansible/, waf/, observability/, siem/
                CYBER  secrets/ (SOPS+age, fichiers *.enc.yaml uniquement)
 ml/            IA     detector/ (détection d'anomalies), assistant/ (RAG Ollama),
+                      face/ (reconnaissance faciale du back-office),
                       training/ (entraînement), data/ (jeux fictifs, non versionnés)
 attacks/       CYBER  scripts Red Team, à lancer depuis le PC Attaquant
 docs/          documentation (architecture, API, procédures ingérées par le RAG)

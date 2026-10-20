@@ -8,7 +8,11 @@ servers:
 paths:
   /v1/login:
     post:
-      summary: Connexion utilisateur
+      summary: Connexion d'un client
+      description: |
+        Réservée aux comptes clients. Un compte du back-office (rôle `admin`) ou un compte désactivé reçoit
+        la même réponse `401` qu'un mauvais mot de passe, même avec le bon : le back-office ne se connecte
+        que par `/v1/backoffice/login` (identifiant, visage, mot de passe).
       operationId: login
       requestBody:
         required: true
@@ -23,6 +27,162 @@ paths:
               schema: { $ref: '#/components/schemas/TokenResponse' }
         '401': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
+  /v1/backoffice/login:
+    post:
+      summary: Connexion du back-office, étape 1 - saisie de l'identifiant
+      description: |
+        Ouvre une tentative de connexion (valable 2 minutes, à usage unique : un visage, un mot de passe).
+        Un identifiant inconnu, un client ou un compte désactivé reçoivent la même réponse `201` et
+        échouent à l'étape du visage : on ne révèle pas quels comptes existent.
+
+        Refusé (`423`) si l'identifiant est verrouillé (deux échecs de suite : 5 minutes, puis la durée
+        double à chaque verrouillage, jusqu'à une heure) ou en attente après un refus (30 s après un visage
+        refusé, 6 s après un mot de passe refusé). `Retry-After` n'est pas utilisé : lire
+        `retry_after_seconds`.
+      operationId: startBackofficeLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier]
+              properties:
+                identifier: { type: string, maxLength: 254, examples: [admin@resilience.local] }
+      responses:
+        '201':
+          description: Tentative ouverte (état `IDENTIFIED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackofficeLogin' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '423':
+          description: Identifiant verrouillé ou en attente (`reason` = `locked` ou `cooldown`)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /v1/backoffice/login/{id}:
+    get:
+      summary: État d'une tentative de connexion
+      operationId: getBackofficeLogin
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: État courant
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackofficeLogin' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+  /v1/backoffice/login/{id}/face:
+    post:
+      summary: Connexion du back-office, étape 2 - la photo
+      description: |
+        Corps binaire : une photo `image/jpeg` ou `image/png` de 1 Mo au plus. Le format est vérifié
+        sur les premiers octets, pas seulement sur l'en-tête. La photo n'est pas conservée.
+
+        Visage reconnu : état `PASSWORD_PENDING`, LED verte clignotante. Visage non reconnu : `401`,
+        LED rouge fixe 30 s, la tentative est terminée (il faut ressaisir l'identifiant). Une panne du
+        service de reconnaissance renvoie `503` et ne compte pas comme un échec.
+      operationId: submitBackofficeFace
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/png: { schema: { type: string, format: binary } }
+      responses:
+        '200':
+          description: Visage reconnu (état `PASSWORD_PENDING`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackofficeLogin' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401':
+          description: |
+            Visage non reconnu (`reason` = `face_not_recognized`). `retry_after_seconds` : délai avant de pouvoir
+            recommencer (30 s, ou la durée du verrouillage si `locked` vaut `true`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/RefusedStep' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /v1/backoffice/login/{id}/password:
+    post:
+      summary: Connexion du back-office, étape 3 - le mot de passe
+      description: |
+        Seulement après un visage reconnu (`409` sinon). Un seul essai par tentative : un mot de passe
+        refusé termine la tentative (LED rouge clignotante), il faut tout recommencer. Le jeton émis
+        porte le rôle `admin` et `amr: [face, pwd]`.
+      operationId: submitBackofficePassword
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, writeOnly: true }
+      responses:
+        '200':
+          description: Connexion réussie, jeton émis (LED verte fixe 30 s)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/TokenResponse' }
+                  - type: object
+                    properties:
+                      state: { type: string, const: GRANTED }
+        '401':
+          description: Mot de passe refusé (`reason` = `wrong_password`)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/RefusedStep' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /v1/devices/led:
+    get:
+      summary: État courant de la LED
+      description: |
+        État tel que publié par `auth` sur MQTT (`resilience/led`). Rôles `operator`, `svc:dashboard`, `admin`.
+        L'ESP8266 ne l'appelle pas : il lit directement le broker.
+      operationId: getLedState
+      responses:
+        '200':
+          description: État
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    { type: string, enum: [off, green-blink, green-solid, red-blink, red-solid] }
+                  since: { type: string, format: date-time }
+                  until:
+                    {
+                      type: [string, 'null'],
+                      format: date-time,
+                      description: Quand la LED repassera à off,
+                    }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /v1/token:
     post:
       summary: Jeton de service (client credentials)
@@ -127,8 +287,32 @@ components:
           items:
             {
               type: string,
-              enum: [customer, operator, 'svc:detector', 'svc:dashboard', 'svc:remediation-canary'],
+              enum:
+                [
+                  customer,
+                  operator,
+                  admin,
+                  'svc:detector',
+                  'svc:dashboard',
+                  'svc:remediation-canary',
+                ],
             }
+    BackofficeLogin:
+      type: object
+      properties:
+        session_id: { type: string, format: uuid }
+        state:
+          type: string
+          enum: [IDENTIFIED, PASSWORD_PENDING, GRANTED, FACE_REFUSED, PASSWORD_REFUSED, EXPIRED]
+        expires_at: { type: string, format: date-time }
+    RefusedStep:
+      allOf:
+        - { $ref: '#/components/schemas/Problem' }
+        - type: object
+          properties:
+            reason: { type: string, enum: [face_not_recognized, wrong_password] }
+            retry_after_seconds: { type: integer, description: Délai avant de pouvoir recommencer }
+            locked: { type: boolean, description: L'identifiant vient d'être verrouillé }
     Problem:
       type: object
       required: [type, title, status]
