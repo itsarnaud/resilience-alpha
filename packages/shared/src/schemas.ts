@@ -4,6 +4,7 @@ import { z } from 'zod';
 export const ROLES = [
   'customer',
   'operator',
+  'admin',
   'svc:detector',
   'svc:dashboard',
   'svc:remediation-canary',
@@ -32,7 +33,6 @@ export const INCIDENT_STATES = [
 ] as const;
 export const IncidentStateSchema = z.enum(INCIDENT_STATES);
 export type IncidentState = z.infer<typeof IncidentStateSchema>;
-
 
 export const IpSchema = z.string().refine((v) => isIP(v) !== 0, { message: 'adresse IP invalide' });
 
