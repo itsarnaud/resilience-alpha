@@ -7,7 +7,7 @@
 // ===================== CONFIGURATION (à adapter) =====================
 const char* WIFI_SSID = "RESILIENCE-G3";           // PA du groupe
 const char* WIFI_PASS = "CHANGEZ_MOI";             // mot de passe du PA
-const char* MQTT_HOST = "10.141.151.60";   // IP du PC Hote sur le reseau RESILIENCE-G3           // PC Hôte sur le PA
+const char* MQTT_HOST = "192.168.137.1";   // PC Hote = PA (hotspot Windows, IP fixe)
 const uint16_t MQTT_PORT = 1883;
 const char* MQTT_TOPIC = "resilience/led";
 

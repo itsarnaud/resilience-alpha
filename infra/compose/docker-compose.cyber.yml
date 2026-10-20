@@ -21,7 +21,7 @@ services:
     container_name: waf
     restart: unless-stopped
     environment:
-      BACKEND: http://wazuh-manager:55000
+      BACKEND: http://application:3000
       PORT: '8080'
       MODSEC_RULE_ENGINE: 'On'
       PARANOIA: '1'
@@ -32,7 +32,7 @@ services:
       - ./config/waf/custom-before.conf:/etc/modsecurity.d/plugins/custom-before.conf:ro
     labels:
       logging: promtail
-    networks: [cyber]
+    networks: [backend, cyber]
 
   # ---------- Certificats TLS (job unique) ----------
   wazuh-certs:
@@ -161,6 +161,9 @@ services:
         aliases: [wazuh.dashboard]
 
 networks:
+  backend: # partagé avec la pile dev (créé par la pile infra)
+    name: resilience-alpha_backend
+    external: true
   cyber:
     name: wazuh-net
 
