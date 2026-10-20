@@ -1,0 +1,173 @@
+# ==============================================================================
+#  Wazuh - deploiement autonome (manager + indexer + dashboard)
+#
+#  docker compose up -d
+#
+#  4 services :
+#    - wazuh-certs     : job unique, genere la CA + les certificats TLS
+#    - wazuh-indexer   : OpenSearch (stockage des alertes)
+#    - wazuh-manager   : le manager (API, agents, alertes)
+#    - wazuh-dashboard : l'interface web du SIEM
+#
+#  Les configurations sont dans ./config (montees en lecture seule).
+# ==============================================================================
+
+name: wazuh
+
+services:
+
+  # ---------- Certificats TLS (job unique) ----------
+  wazuh-certs:
+    image: wazuh/wazuh-certs-generator:${WAZUH_CERTS_GENERATOR_VERSION:-0.0.4}
+    container_name: wazuh-certs
+    user: "0:0"
+    restart: "no"
+    environment:
+      CERT_TOOL_VERSION: ${WAZUH_CERTS_TOOL_VERSION:-4.14}
+    volumes:
+      - wazuh_certs:/certificates
+      - ./config/certs.yml:/config/certs.yml:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        # Le tool travaille dans le repertoire courant et laisse un dossier
+        # "wazuh-certificates" derriere lui : il echoue au 2e demarrage avec
+        # "Directory wazuh-certificates already exists".
+        rm -rf /certificates/wazuh-certificates
+        # Les certificats doivent rester stables : manager, indexer et
+        # dashboard les chargent au demarrage, les changer a chaud casse le TLS.
+        if [ -f /certificates/root-ca.pem ] && [ -f /certificates/wazuh.indexer.pem ] && [ -f /certificates/wazuh.dashboard.pem ]; then
+          echo "==> certificats deja presents dans le volume, generation ignoree"
+        else
+          rm -f /certificates/*
+          /entrypoint.sh
+        fi
+        # Le tool fait "chmod -R 500 /certificates" AVANT de copier la CA vers
+        # root-ca-manager.pem -> "Permission denied" ; et laisse les fichiers en
+        # 0400 uid 1000 alors que le manager tourne en uid 999.
+        chmod 755 /certificates
+        chmod 644 /certificates/*
+        cp -f /certificates/root-ca.pem /certificates/root-ca-manager.pem
+        cp -f /certificates/root-ca.key /certificates/root-ca-manager.key
+        chmod 644 /certificates/root-ca-manager.pem /certificates/root-ca-manager.key
+        echo "==> certificats prets dans /certificates"
+    networks: [wazuh]
+
+  # ---------- Indexer (OpenSearch) ----------
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:${WAZUH_VERSION:-4.14.9}
+    container_name: wazuh-indexer
+    hostname: wazuh.indexer
+    restart: unless-stopped
+    environment:
+      OPENSEARCH_JAVA_OPTS: -Xms${INDEXER_HEAP_SIZE:-1g} -Xmx${INDEXER_HEAP_SIZE:-1g}
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - wazuh_indexer_data:/var/lib/wazuh-indexer
+      - wazuh_certs:/usr/share/wazuh-indexer/config/certs:ro
+      - ./config/opensearch.yml:/usr/share/wazuh-indexer/config/opensearch.yml:ro
+      # L'image embarque un internal_users.yml dont le hash admin correspond a
+      # "admin" et non a SecretPassword : sans ce fichier, l'API de l'indexer
+      # repond "Unauthorized" avec le mot de passe du .env.
+      - ./config/internal_users.yml:/usr/share/wazuh-indexer/config/opensearch-security/internal_users.yml:ro
+    ports:
+      - "${INDEXER_PORT:-9200}:9200"
+    depends_on:
+      wazuh-certs:
+        condition: service_completed_successfully
+    networks:
+      wazuh:
+        aliases: [wazuh.indexer]
+
+  # ---------- Manager ----------
+  wazuh-manager:
+    image: wazuh/wazuh-manager:${WAZUH_VERSION:-4.14.9}
+    container_name: wazuh-manager
+    hostname: wazuh.manager
+    restart: unless-stopped
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 655360, hard: 655360 }
+    environment:
+      # Connexion filebeat -> indexer (TLS verifie)
+      INDEXER_URL: https://wazuh.indexer:9200
+      INDEXER_USERNAME: ${INDEXER_USERNAME:-admin}
+      INDEXER_PASSWORD: ${INDEXER_PASSWORD:-SecretPassword}
+      FILEBEAT_SSL_VERIFICATION_MODE: full
+      SSL_CERTIFICATE_AUTHORITIES: /wazuh-certs/root-ca.pem
+      SSL_CERTIFICATE: /wazuh-certs/wazuh.manager.pem
+      SSL_KEY: /wazuh-certs/wazuh.manager-key.pem
+      # Utilisateur de l'API Wazuh (cree au demarrage par l'image)
+      API_USERNAME: ${WAZUH_API_USER:-wazuh-wui}
+      API_PASSWORD: ${WAZUH_API_PASSWORD:-MyS3cr37P450r.*-}
+    ports:
+      - "${WAZUH_MANAGER_API_PORT:-55000}:55000"   # API du manager
+      - "${WAZUH_AGENT_PORT:-1514}:1514"             # evenements des agents
+      - "${WAZUH_ENROLL_PORT:-1515}:1515"           # enrolement des agents
+    volumes:
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_api:/var/ossec/api/configuration
+      - filebeat_etc:/etc/filebeat
+      - filebeat_var:/var/lib/filebeat
+      - wazuh_certs:/wazuh-certs:ro
+      # ossec.conf : l'image recopie /wazuh-config-mount/* dans /var/ossec
+      # avec les bons droits (un bind mount direct n'aurait pas les bons owner).
+      - ./config/manager:/wazuh-config-mount/etc:ro
+    depends_on:
+      wazuh-certs:
+        condition: service_completed_successfully
+      wazuh-indexer:
+        condition: service_started
+    networks:
+      wazuh:
+        aliases: [wazuh.manager]
+
+  # ---------- Dashboard ----------
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:${WAZUH_VERSION:-4.14.9}
+    container_name: wazuh-dashboard
+    hostname: wazuh.dashboard
+    restart: unless-stopped
+    environment:
+      INDEXER_USERNAME: ${INDEXER_USERNAME:-admin}
+      INDEXER_PASSWORD: ${INDEXER_PASSWORD:-SecretPassword}
+      WAZUH_API_URL: https://wazuh.manager
+      API_PORT: 55000
+      API_USERNAME: ${WAZUH_API_USER:-wazuh-wui}
+      API_PASSWORD: ${WAZUH_API_PASSWORD:-MyS3cr37P450r.*-}
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:-kibanaserver}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-kibanaserver}
+    volumes:
+      - wazuh_certs:/usr/share/wazuh-dashboard/certs:ro
+      - wazuh_dashboard_config:/usr/share/wazuh-dashboard/data/wazuh/config
+      - ./config/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
+    ports:
+      - "${DASHBOARD_PORT:-5601}:5601"
+    depends_on:
+      wazuh-certs:
+        condition: service_completed_successfully
+      wazuh-manager:
+        condition: service_started
+    networks:
+      wazuh:
+        aliases: [wazuh.dashboard]
+
+networks:
+  wazuh:
+    name: ${WAZUH_NETWORK_NAME:-wazuh-net}
+
+volumes:
+  wazuh_certs:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_api:
+  filebeat_etc:
+  filebeat_var:
+  wazuh_indexer_data:
+  wazuh_dashboard_config:
