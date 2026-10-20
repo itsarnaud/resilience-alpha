@@ -1,0 +1,14 @@
+.git
+.github
+.husky
+**/node_modules
+**/dist
+**/src/generated
+.env
+.env.*
+!.env.example
+docs
+ml
+infra
+attacks
+*.log

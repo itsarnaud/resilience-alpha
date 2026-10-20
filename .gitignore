@@ -89,3 +89,6 @@ Thumbs.db
 Workshop2026-M2-G*/
 *.zip
 *.mp4
+
+# Client Prisma généré
+**/src/generated/

@@ -1,0 +1,48 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String         @id @default(uuid()) @db.Uuid
+  email        String         @unique
+  passwordHash String         @map("password_hash")
+  roles        String[]
+  createdAt    DateTime       @default(now()) @map("created_at")
+  attempts     LoginAttempt[]
+
+  @@map("users")
+}
+
+/// Comptes techniques (détecteur, dashboard, remédiation)
+model ServiceClient {
+  clientId   String   @id @map("client_id")
+  secretHash String   @map("secret_hash")
+  roles      String[]
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("service_clients")
+}
+
+/// Journal des tentatives de connexion
+model LoginAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String
+  userId    String?  @map("user_id") @db.Uuid
+  ip        String
+  success   Boolean
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
