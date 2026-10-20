@@ -21,7 +21,7 @@ if [ -n "$bad" ]; then echo "Fichiers sensibles :"; echo "$bad"; fail=1; fi
 pat='(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AGE-SECRET-KEY-|AKIA[0-9A-Z]{16}|(password|passwd|secret|token|api_key)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/+_-]{12,})'
 # `|| true` : si tous les fichiers sont exclus, grep -v ne trouve rien et renvoie 1, ce qui ferait
 # échouer le script en silence (pipefail) alors qu'il n'y a simplement rien à examiner.
-hits=$(echo "$files" | { grep -vE '(\.enc\.ya?ml|\.env\.example|check-secrets\.sh|\.gitkeep|package-lock\.json|\.test\.ts)$' || true; } \
+hits=$(echo "$files" | { grep -vE '(\.enc\.ya?ml|\.env\.example|check-secrets\.sh|\.gitkeep|package-lock\.json|\.test\.tsx?)$' || true; } \
   | while read -r f; do [ -f "$f" ] && grep -InE "$pat" "$f" | sed "s#^#$f:#" || true; done)
 if [ -n "$hits" ]; then echo "Motifs suspects :"; echo "$hits"; fail=1; fi
 
