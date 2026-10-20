@@ -80,7 +80,7 @@ services:
 
   # ---------- IA : reconnaissance faciale (MFA back-office) ----------
   face:
-    build: ./face
+    build: ../../ml/face # service de l'IA, rangé avec les autres composants ML
     container_name: face
     restart: unless-stopped
     environment:
