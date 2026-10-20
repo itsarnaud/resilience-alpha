@@ -23,28 +23,6 @@ services:
       logging: promtail
     networks: [frontend, backend]
 
-  # ---------- SIEM : Wazuh manager ----------
-  wazuh-manager:
-    image: wazuh/wazuh-manager:4.11.0
-    container_name: wazuh-manager
-    hostname: wazuh-manager
-    restart: unless-stopped
-    ulimits:
-      memlock: { soft: -1, hard: -1 }
-      nofile: { soft: 655360, hard: 655360 }
-    environment:
-      API_USERNAME: ${WAZUH_API_USER}
-      API_PASSWORD: ${WAZUH_API_PASSWORD}
-    ports:
-      - '1514:1514' # communication avec les agents
-      - '1515:1515' # enrôlement des agents
-      - '55000:55000' # API Wazuh
-    volumes:
-      - wazuh_etc:/var/ossec/etc
-      - wazuh_logs:/var/ossec/logs
-      - wazuh_queue:/var/ossec/queue
-      - wazuh_api:/var/ossec/api/configuration
-    networks: [monitoring, backend]
 
 networks:
   frontend: # exposé : seul le WAF y est (propre à cette pile)
@@ -56,13 +34,3 @@ networks:
     name: resilience-alpha_monitoring
     external: true
 
-# Noms fixes = mêmes volumes que l'ancien docker-compose.yml (données conservées)
-volumes:
-  wazuh_etc:
-    name: resilience-alpha_wazuh_etc
-  wazuh_logs:
-    name: resilience-alpha_wazuh_logs
-  wazuh_queue:
-    name: resilience-alpha_wazuh_queue
-  wazuh_api:
-    name: resilience-alpha_wazuh_api
