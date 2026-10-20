@@ -22,4 +22,7 @@ if (testDb) {
 }
 process.env.DATABASE_URL = testDb ?? 'postgresql://inutilise';
 
-export default defineConfig({});
+export default defineConfig({
+  // Les fichiers d'intégration vident les mêmes tables : ils doivent s'exécuter l'un après l'autre.
+  test: { fileParallelism: false },
+});

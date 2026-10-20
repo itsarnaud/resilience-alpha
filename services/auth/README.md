@@ -6,15 +6,17 @@ Contrat d'API : [`docs/api/auth.openapi.yaml`](../../docs/api/auth.openapi.yaml)
 
 ## Routes
 
-| Route                        | Description                                                        |
-| ---------------------------- | ------------------------------------------------------------------ |
-| `POST /v1/register`          | Crée un compte `customer` (mot de passe de 12 caractères minimum). |
-| `POST /v1/login`             | Connexion, renvoie un JWT. Journalise chaque échec.                |
-| `POST /v1/token`             | Jeton de service (`client_id`, `client_secret`).                   |
-| `GET /v1/me`                 | Profil du porteur du jeton.                                        |
-| `GET /.well-known/jwks.json` | Clés publiques, utilisées par `api` et `remediation`.              |
-| `GET /healthz`, `/readyz`    | Santé (processus) et disponibilité (base de données).              |
-| `GET /metrics`               | Métriques Prometheus.                                              |
+| Route                                | Description                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------ |
+| `POST /v1/register`                  | Crée un compte `customer` (mot de passe de 12 caractères minimum).             |
+| `POST /v1/login`                     | Connexion d'un client, renvoie un JWT. Refuse les comptes `admin`.             |
+| `POST /v1/token`                     | Jeton de service (`client_id`, `client_secret`).                               |
+| `GET /v1/me`                         | Profil du porteur du jeton.                                                    |
+| `GET /.well-known/jwks.json`         | Clés publiques, utilisées par `api` et `remediation`.                          |
+| `GET /healthz`, `/readyz`            | Santé (processus) et disponibilité (base de données).                          |
+| `GET /metrics`                       | Métriques Prometheus.                                                          |
+| `POST /v1/backoffice/login` et suite | Connexion du back-office : identifiant, photo, mot de passe (voir ci-dessous). |
+| `GET /v1/devices/led`                | État courant de la LED (`operator`, `svc:dashboard`, `admin`).                 |
 
 Le service écoute à la racine (`/v1/...`) : le WAF doit retirer le préfixe `/auth` avant de transmettre.
 
@@ -35,9 +37,71 @@ src/
 ├── lib/              config, logger, prisma, keys (JWT), password (bcrypt),
 │                     metrics, roles, context
 └── scripts/          seed (données de démonstration)
+
+lib/ contient aussi face (reconnaissance faciale) et mqtt (publication de la LED) ; services/ contient
+BackofficeServices (parcours), LockoutServices (verrouillage) et LedServices (état de la LED).
 prisma/               schéma et migrations
 test/                 tests d'intégration
 ```
+
+## Connexion du back-office
+
+Réservée aux comptes de rôle `admin`. Trois étapes, toutes gérées côté serveur : le navigateur ne décide de rien.
+
+```
+POST /v1/backoffice/login                 { identifier }      -> 201 { session_id, state: IDENTIFIED }
+POST /v1/backoffice/login/:id/face        (image/jpeg|png)    -> 200 PASSWORD_PENDING | 401 face_not_recognized
+POST /v1/backoffice/login/:id/password    { password }        -> 200 { access_token, state: GRANTED } | 401 wrong_password
+GET  /v1/backoffice/login/:id                                 -> état courant
+```
+
+- **Une tentative sert une fois** : un visage, un mot de passe. Après un refus, il faut en ouvrir une nouvelle (identifiant ressaisi), comme l'exige la consigne. La tentative expire au bout de 2 minutes, sans compter comme un échec.
+- **Verrouillage par identifiant**, en base : deux échecs de suite (visage ou mot de passe) bloquent l'identifiant 5 minutes ; chaque verrouillage suivant double la durée, jusqu'à une heure ; un succès remet tout à zéro. Après un refus, un délai court (30 s après un visage refusé, 6 s après un mot de passe refusé) empêche de ressaisir l'identifiant tout de suite. Les lignes sont verrouillées pendant le calcul : des échecs envoyés en parallèle ne se perdent pas.
+- **Aucune fuite sur les comptes.** Un identifiant inconnu, un client ou un compte désactivé suivent le même parcours, échouent à l'étape du visage, se verrouillent de la même façon, et la réponse met le même temps (`FACE_MIN_DELAY_MS`). Le service de visage n'est appelé que pour un vrai compte `admin`.
+- **Une panne du service de visage n'est pas un échec** : `503`, rien n'est compté, rien n'est verrouillé.
+- **Contournement impossible par l'autre porte** : un compte `admin` ne peut pas se connecter par `/v1/login`.
+- **La photo** est lue en binaire (1 Mo au plus), son format est vérifié sur les premiers octets, et elle n'est jamais conservée ni journalisée.
+- Le jeton émis porte `roles: [admin]` et `amr: [face, pwd]`.
+
+### Reconnaissance faciale
+
+`lib/face.ts` isole le service. Deux modes (`FACE_VERIFIER`) :
+
+- `stub` (développement) : tout le monde est reconnu, ou personne (`FACE_STUB_RESULT=match|nomatch`). **Refusé en production.**
+- `http` : appelle le service de l'IA, rangé dans `ml/face` (`FACE_SERVICE_URL`, `http://face:5000` par défaut) : `POST /recognize` avec `{ "user": "<identifiant du compte>", "image": "<photo en base64>" }`, réponse `{ "recognized": true, "distance": 0.31, "threshold": 0.6 }`. `distance` : plus elle est petite, plus les visages se ressemblent ; elle est conservée pour l'enquête (`backoffice_logins.face_distance`).
+
+  Un visage différent, un identifiant jamais enregistré ou une photo sans visage répondent `recognized: false` : ce sont des **refus**. Une erreur serveur, une réponse illisible, un délai dépassé ou un service arrêté sont des **pannes** (`503`, rien n'est compté, rien n'est verrouillé).
+
+  L'identifiant envoyé est celui du compte : c'est la clé sous laquelle le visage doit avoir été enregistré (`POST /enroll`).
+
+### LED (ESP8266)
+
+`auth` publie l'état sur MQTT, sujet `resilience/led`, avec les messages du firmware (`iot/esp8266-led`) : `green-blink`, `green-solid`, `red-blink`, `red-solid`, `off`.
+
+| Moment               | Message       | Retour à `off`                                     |
+| -------------------- | ------------- | -------------------------------------------------- |
+| visage reconnu       | `green-blink` | à l'expiration de la tentative                     |
+| connexion réussie    | `green-solid` | après 30 s                                         |
+| mot de passe refusé  | `red-blink`   | après quelques secondes (le firmware fait 10 fois) |
+| visage non reconnu   | `red-solid`   | après 30 s                                         |
+| démarrage du service | `off`         |                                                    |
+
+La LED est un signal, pas une condition d'accès : une panne du broker est journalisée (`led_publish_failed`) et comptée (`auth_led_publish_total{result="failed"}`) mais ne bloque jamais une connexion, et la publication n'est jamais attendue par la requête. Un nouvel état annule l'échéance de l'ancien. Pas de message conservé (`retain`).
+
+**Broker.** Sans `MQTT_URL`, la LED n'est pas pilotée. En démo, le broker doit exiger un identifiant : sans cela, n'importe qui sur le réseau du labo pourrait publier `green-solid`. Droits attendus : l'utilisateur d'`auth` peut **écrire** sur `resilience/led`, celui de l'ESP seulement **lire**. Exemple Mosquitto (vérifié) :
+
+```
+# mosquitto.conf                # acl
+listener 1883                   user auth
+allow_anonymous false           topic write resilience/led
+password_file .../passwd
+acl_file .../acl                user esp
+                                topic read resilience/led
+```
+
+### Journalisation (SIEM)
+
+Chaque étape est un événement JSON : `backoffice_login_started`, `backoffice_face_result` (avec le score), `backoffice_login_failed` (`stage`: `face` ou `password`, `locked`, `lock_level`), `backoffice_login_blocked`, `backoffice_login_succeeded`, `led_state_changed`, `led_publish_failed`, `face_service_unavailable`. Métriques : `auth_backoffice_logins_total{result}`, `auth_backoffice_lockouts_total`, `auth_led_publish_total{result}`.
 
 ## Configuration
 
@@ -69,13 +133,14 @@ Changer le schéma : modifier `prisma/schema.prisma`, puis `npx prisma migrate d
 
 `seed` crée les comptes à partir de variables d'environnement. Aucun secret n'est dans le dépôt, et chaque bloc est ignoré si ses variables manquent.
 
-| Variables                                       | Crée                                                       |
-| ----------------------------------------------- | ---------------------------------------------------------- |
-| `SEED_OPERATOR_EMAIL`, `SEED_OPERATOR_PASSWORD` | utilisateur `operator` (dashboard)                         |
-| `SEED_VICTIM_EMAIL`, `SEED_VICTIM_PASSWORD`     | compte visé par le brute force (mot de passe faible voulu) |
-| `SEED_SVC_DETECTOR_SECRET`                      | client `svc-detector` (`svc:detector`)                     |
-| `SEED_SVC_DASHBOARD_SECRET`                     | client `svc-dashboard` (`svc:dashboard`)                   |
-| `SEED_SVC_REMEDIATION_SECRET`                   | client `svc-remediation` (`svc:remediation-canary`)        |
+| Variables                                       | Crée                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| `SEED_OPERATOR_EMAIL`, `SEED_OPERATOR_PASSWORD` | utilisateur `operator` (dashboard)                           |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`       | compte du back-office (rôle `admin` : visage + mot de passe) |
+| `SEED_VICTIM_EMAIL`, `SEED_VICTIM_PASSWORD`     | compte visé par le brute force (mot de passe faible voulu)   |
+| `SEED_SVC_DETECTOR_SECRET`                      | client `svc-detector` (`svc:detector`)                       |
+| `SEED_SVC_DASHBOARD_SECRET`                     | client `svc-dashboard` (`svc:dashboard`)                     |
+| `SEED_SVC_REMEDIATION_SECRET`                   | client `svc-remediation` (`svc:remediation-canary`)          |
 
 ```bash
 npm run seed:dev -w services/auth          # en développement (tsx)

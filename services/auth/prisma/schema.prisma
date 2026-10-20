@@ -11,17 +11,18 @@ datasource db {
 }
 
 model User {
-  id           String         @id @default(uuid()) @db.Uuid
-  email        String         @unique
-  passwordHash String         @map("password_hash")
-  roles        String[]
-  createdAt    DateTime       @default(now()) @map("created_at")
-  attempts     LoginAttempt[]
+  id               String            @id @default(uuid()) @db.Uuid
+  email            String            @unique
+  passwordHash     String            @map("password_hash")
+  roles            String[]
+  active           Boolean           @default(true)
+  createdAt        DateTime          @default(now()) @map("created_at")
+  attempts         LoginAttempt[]
+  backofficeLogins BackofficeLogin[]
 
   @@map("users")
 }
 
-/// Comptes techniques (détecteur, dashboard, remédiation)
 model ServiceClient {
   clientId   String   @id @map("client_id")
   secretHash String   @map("secret_hash")
@@ -45,4 +46,43 @@ model LoginAttempt {
   @@index([email, createdAt])
   @@index([ip, createdAt])
   @@map("login_attempts")
+}
+
+enum BackofficeLoginState {
+  IDENTIFIED
+  PASSWORD_PENDING
+  GRANTED
+  FACE_REFUSED
+  PASSWORD_REFUSED
+  EXPIRED
+}
+
+model BackofficeLogin {
+  id           String               @id @default(uuid()) @db.Uuid
+  identifier   String
+  userId       String?              @map("user_id") @db.Uuid
+  state        BackofficeLoginState @default(IDENTIFIED)
+  ip           String
+  /// Distance renvoyée par la reconnaissance faciale (plus elle est petite, plus les visages se ressemblent).
+  faceDistance Float?               @map("face_distance")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  expiresAt    DateTime             @map("expires_at")
+  finishedAt   DateTime?            @map("finished_at")
+  user         User?                @relation(fields: [userId], references: [id])
+
+  @@index([identifier, createdAt])
+  @@index([state, expiresAt])
+  @@map("backoffice_logins")
+}
+
+model BackofficeLockout {
+  identifier          String    @id
+  consecutiveFailures Int       @default(0) @map("consecutive_failures")
+  lockLevel           Int       @default(0) @map("lock_level")
+  lockedUntil         DateTime? @map("locked_until")
+  cooldownUntil       DateTime? @map("cooldown_until")
+  lastFailureAt       DateTime? @map("last_failure_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@map("backoffice_lockouts")
 }

@@ -22,3 +22,24 @@ export const clientFailures = new Counter({
   help: "Échecs d'authentification de services",
   registers: [metrics.registry],
 });
+
+export const backofficeLogins = new Counter({
+  name: 'auth_backoffice_logins_total',
+  help: 'Étapes de la connexion du back-office',
+  // started | face_ok | face_refused | password_refused | granted | blocked | expired
+  labelNames: ['result'] as const,
+  registers: [metrics.registry],
+});
+
+export const backofficeLockouts = new Counter({
+  name: 'auth_backoffice_lockouts_total',
+  help: 'Identifiants verrouillés après des échecs consécutifs',
+  registers: [metrics.registry],
+});
+
+export const ledPublish = new Counter({
+  name: 'auth_led_publish_total',
+  help: "Publications de l'état de la LED sur MQTT",
+  labelNames: ['result'] as const,
+  registers: [metrics.registry],
+});

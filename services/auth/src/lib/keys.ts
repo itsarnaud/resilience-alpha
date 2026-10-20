@@ -34,8 +34,8 @@ async function loadSigner() {
     jwks: { keys: [{ ...publicJwk, kid, alg: 'RS256', use: 'sig' }] },
     ttlSeconds: config.ACCESS_TOKEN_TTL_SECONDS,
     /** Émet un jeton d'accès RS256. */
-    sign: (subject: string, roles: Role[]) =>
-      new SignJWT({ roles })
+    sign: (subject: string, roles: Role[], claims: Record<string, unknown> = {}) =>
+      new SignJWT({ roles, ...claims })
         .setProtectedHeader({ alg: 'RS256', kid })
         .setSubject(subject)
         .setIssuer(config.JWT_ISSUER)

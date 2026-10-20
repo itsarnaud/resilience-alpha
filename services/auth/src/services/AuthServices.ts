@@ -28,8 +28,16 @@ export const login = async (
   const user = await prisma.user.findUnique({ where: { email } });
   const valid = await verifyPassword(password, user?.passwordHash ?? (await getDummyHash()));
 
-  if (!user || !valid) {
-    const reason = user ? 'bad_password' : 'unknown_user';
+  const refusedAccount = user !== null && (user.roles.includes('admin') || !user.active);
+
+  if (!user || !valid || refusedAccount) {
+    const reason = !user
+      ? 'unknown_user'
+      : user.roles.includes('admin')
+        ? 'backoffice_account'
+        : !user.active
+          ? 'inactive_account'
+          : 'bad_password';
     loginFailures.inc({ reason });
     await prisma.loginAttempt.create({
       data: { email, userId: user?.id, ip: ctx.ip, success: false, reason },

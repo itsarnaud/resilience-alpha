@@ -2,6 +2,7 @@
  * Données de démonstration.
  *
  *   SEED_OPERATOR_EMAIL / SEED_OPERATOR_PASSWORD   compte opérateur (dashboard)
+ *   SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD         compte du back-office (rôle admin : visage + mot de passe)
  *   SEED_VICTIM_EMAIL / SEED_VICTIM_PASSWORD       compte visé par le brute force (mot de passe faible voulu)
  *   SEED_SVC_DETECTOR_SECRET, SEED_SVC_DASHBOARD_SECRET, SEED_SVC_REMEDIATION_SECRET   secrets des services
  *
@@ -43,6 +44,8 @@ async function upsertClient(clientId: string, secretVar: string, roles: string[]
 
 await upsertUser('SEED_OPERATOR_EMAIL', 'SEED_OPERATOR_PASSWORD', ['operator']);
 await upsertUser('SEED_VICTIM_EMAIL', 'SEED_VICTIM_PASSWORD', ['customer']);
+// Compte du back-office : connexion par visage et mot de passe (le visage s'enregistre dans le service IA).
+await upsertUser('SEED_ADMIN_EMAIL', 'SEED_ADMIN_PASSWORD', ['admin']);
 await upsertClient('svc-detector', 'SEED_SVC_DETECTOR_SECRET', ['svc:detector']);
 await upsertClient('svc-dashboard', 'SEED_SVC_DASHBOARD_SECRET', ['svc:dashboard']);
 await upsertClient('svc-remediation', 'SEED_SVC_REMEDIATION_SECRET', ['svc:remediation-canary']);
