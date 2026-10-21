@@ -35,8 +35,9 @@ services:
       - ./config/waf/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
       - ./config/waf/waf_api_routes.conf.template:/etc/nginx/templates/includes/waf_api_routes.conf.template:ro
       - ./config/waf/proxy_common.conf.template:/etc/nginx/templates/includes/proxy_common.conf.template:ro
-      # Exclusion CRS ciblee (etape /face du login back-office).
-      - ./config/waf/custom-before.conf:/etc/modsecurity.d/plugins/custom-before.conf:ro
+      # Exclusion CRS ciblee (login back-office) via modsecurity-override.conf,
+      # inclus inconditionnellement par l'image AVANT les regles CRS.
+      - ./config/waf/modsecurity-override.conf:/etc/nginx/templates/modsecurity.d/modsecurity-override.conf.template:ro
     # L'image sonde https://localhost:8443/healthz par defaut ; on a retire le bloc SSL,
     # donc on sonde le /healthz HTTP sur le port front (8080).
     healthcheck:
