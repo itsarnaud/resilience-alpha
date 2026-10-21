@@ -1,0 +1,101 @@
+{
+  "input_sha256": "235ef4af91c73f33ce1c0196e310a64b5ec6b4d9d5dd1b61a46fc20af6689c33",
+  "model_sha256": "a590d2f5021f14e3e08bd68e6aa462d0ba7789cabdbee3ad331aaf06202d84ca",
+  "threshold_sha256": "38b298bb9d6dad6c5487321d650d6e90bba11e6d0464d1f2cf9911f580c10789",
+  "runtime": {
+    "sklearn": "1.9.1",
+    "joblib": "1.6.0"
+  },
+  "threshold": 0.6235500624027918,
+  "events": 11,
+  "duplicates": 0,
+  "malformed": 0,
+  "known_source_ip": "192.168.166.1",
+  "source_ip_identity": "Docker gateway confirmed by team; NOT verified attacker IP",
+  "cases": [
+    {
+      "label": "normal",
+      "window_end": "2026-10-21T13:56:00+00:00",
+      "predictions": [
+        {
+          "source_ip": "192.168.166.1",
+          "window_end": "2026-10-21T13:56:00+00:00",
+          "is_anomaly": false,
+          "threshold_status": "provisional_not_validated",
+          "anomaly_score": 0.05259165486012596,
+          "score": 0.552591654860126,
+          "threshold": 0.6235500624027918,
+          "score_method": "negative_score_samples",
+          "features": {
+            "attempt_count": 3,
+            "failure_count": 1,
+            "success_count": 2,
+            "failure_ratio": 0.3333333333333333,
+            "unique_accounts": 2
+          },
+          "training_data_origin": "synthetic",
+          "model_status": "prototype_not_validated"
+        }
+      ],
+      "new_incidents": 0,
+      "incident_types": [],
+      "stats": [],
+      "delivery": {
+        "accepted": 0,
+        "deferred": 0,
+        "enabled": false
+      }
+    },
+    {
+      "label": "attack_mixed_live",
+      "window_end": "2026-10-21T13:56:15+00:00",
+      "predictions": [
+        {
+          "source_ip": "192.168.166.1",
+          "window_end": "2026-10-21T13:56:15+00:00",
+          "is_anomaly": true,
+          "threshold_status": "provisional_not_validated",
+          "anomaly_score": 0.24135483004235492,
+          "score": 0.7413548300423549,
+          "threshold": 0.6235500624027918,
+          "score_method": "negative_score_samples",
+          "features": {
+            "attempt_count": 11,
+            "failure_count": 9,
+            "success_count": 2,
+            "failure_ratio": 0.8181818181818182,
+            "unique_accounts": 2
+          },
+          "training_data_origin": "synthetic",
+          "model_status": "prototype_not_validated"
+        }
+      ],
+      "new_incidents": 1,
+      "incident_types": [
+        "BRUTE_FORCE"
+      ],
+      "stats": [
+        {
+          "attempts": 11,
+          "failures": 9,
+          "window_seconds": 60
+        }
+      ],
+      "delivery": {
+        "accepted": 0,
+        "deferred": 0,
+        "enabled": false
+      }
+    }
+  ],
+  "validation_status": "limited_replay_only",
+  "automatic_delivery_enabled": false,
+  "limitations": [
+    "Only one normal phase and one attack phase; not an accuracy estimate.",
+    "Export is a short selected capture, not evidence of complete 60-second collection.",
+    "Overlapping replay windows are not independent test samples.",
+    "WAF enforcement is team-reported, not exercised by this offline replay.",
+    "Model remains trained on synthetic data; model and threshold statuses unchanged."
+  ],
+  "repeated_window_new_incidents": 0
+}
