@@ -157,6 +157,123 @@ paths:
         '409': { $ref: '#/components/responses/Problem' }
         '410': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
+  /v1/admin/users:
+    get:
+      summary: Lister les comptes (habilitations)
+      description: Rôle `admin`.
+      operationId: listUsers
+      responses:
+        '200':
+          description: Comptes
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/UserSummary' } }
+    post:
+      summary: Créer un compte
+      description: Rôle `admin`. Un rôle de service (`svc:...`) ne peut pas être attribué ici.
+      operationId: createAdminUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, roles]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, writeOnly: true, minLength: 12 }
+                roles:
+                  type: array
+                  minItems: 1
+                  items: { type: string, enum: [customer, operator, admin] }
+      responses:
+        '201':
+          description: Compte créé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserSummary' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /v1/admin/users/{id}:
+    patch:
+      summary: Modifier les habilitations d'un compte
+      description: |
+        Rôle `admin`. On ne peut ni retirer le rôle `admin` ni désactiver le dernier administrateur actif,
+        ni modifier ses propres habilitations (`403`).
+      operationId: updateAdminUser
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roles:
+                  type: array
+                  minItems: 1
+                  items: { type: string, enum: [customer, operator, admin] }
+                active: { type: boolean }
+      responses:
+        '200':
+          description: Compte modifié
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserSummary' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409':
+          description: Ce serait le dernier administrateur actif
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /v1/admin/users/{id}/face:
+    post:
+      summary: Enrôler un visage pour ce compte
+      description: |
+        Rôle `admin`. Corps binaire (`image/jpeg` ou `image/png`, 1 Mo au plus), comme pour la connexion.
+        Enregistré sous l'email du compte, la clé utilisée à la connexion.
+      operationId: enrollAdminUserFace
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/png: { schema: { type: string, format: binary } }
+      responses:
+        '201':
+          description: Visage enrôlé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  samples:
+                    {
+                      type: integer,
+                      description: Échantillons conservés pour ce compte (5 au plus),
+                    }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422':
+          description: Photo invalide, ou aucun visage détecté
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /v1/admin/lockouts/{identifier}:
+    delete:
+      summary: Débloquer un identifiant
+      description: Rôle `admin`. Lève un verrouillage du back-office avant son échéance.
+      operationId: unlockBackofficeIdentifier
+      parameters:
+        - { name: identifier, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Débloqué }
   /v1/devices/led:
     get:
       summary: État courant de la LED
@@ -305,6 +422,14 @@ components:
           type: string
           enum: [IDENTIFIED, PASSWORD_PENDING, GRANTED, FACE_REFUSED, PASSWORD_REFUSED, EXPIRED]
         expires_at: { type: string, format: date-time }
+    UserSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        roles: { type: array, items: { type: string, enum: [customer, operator, admin] } }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
     RefusedStep:
       allOf:
         - { $ref: '#/components/schemas/Problem' }

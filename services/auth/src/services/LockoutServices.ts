@@ -100,6 +100,9 @@ export async function recordFailure(
 export const recordSuccess = (identifier: string) =>
   prisma.backofficeLockout.deleteMany({ where: { identifier } });
 
+/** Déblocage manuel par un administrateur. */
+export const clear = recordSuccess;
+
 /** Supprime les lignes anciennes (un attaquant qui essaie des milliers d'identifiants ne doit pas remplir la base). */
 export const purgeStale = () =>
   prisma.backofficeLockout.deleteMany({

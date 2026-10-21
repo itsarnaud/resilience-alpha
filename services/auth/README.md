@@ -6,17 +6,20 @@ Contrat d'API : [`docs/api/auth.openapi.yaml`](../../docs/api/auth.openapi.yaml)
 
 ## Routes
 
-| Route                                | Description                                                                    |
-| ------------------------------------ | ------------------------------------------------------------------------------ |
-| `POST /v1/register`                  | Crée un compte `customer` (mot de passe de 12 caractères minimum).             |
-| `POST /v1/login`                     | Connexion d'un client, renvoie un JWT. Refuse les comptes `admin`.             |
-| `POST /v1/token`                     | Jeton de service (`client_id`, `client_secret`).                               |
-| `GET /v1/me`                         | Profil du porteur du jeton.                                                    |
-| `GET /.well-known/jwks.json`         | Clés publiques, utilisées par `api` et `remediation`.                          |
-| `GET /healthz`, `/readyz`            | Santé (processus) et disponibilité (base de données).                          |
-| `GET /metrics`                       | Métriques Prometheus.                                                          |
-| `POST /v1/backoffice/login` et suite | Connexion du back-office : identifiant, photo, mot de passe (voir ci-dessous). |
-| `GET /v1/devices/led`                | État courant de la LED (`operator`, `svc:dashboard`, `admin`).                 |
+| Route                                                      | Description                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `POST /v1/register`                                        | Crée un compte `customer` (mot de passe de 12 caractères minimum).             |
+| `POST /v1/login`                                           | Connexion d'un client, renvoie un JWT. Refuse les comptes `admin`.             |
+| `POST /v1/token`                                           | Jeton de service (`client_id`, `client_secret`).                               |
+| `GET /v1/me`                                               | Profil du porteur du jeton.                                                    |
+| `GET /.well-known/jwks.json`                               | Clés publiques, utilisées par `api` et `remediation`.                          |
+| `GET /healthz`, `/readyz`                                  | Santé (processus) et disponibilité (base de données).                          |
+| `GET /metrics`                                             | Métriques Prometheus.                                                          |
+| `POST /v1/backoffice/login` et suite                       | Connexion du back-office : identifiant, photo, mot de passe (voir ci-dessous). |
+| `GET /v1/devices/led`                                      | État courant de la LED (`operator`, `svc:dashboard`, `admin`).                 |
+| `GET`, `POST /v1/admin/users`, `PATCH /v1/admin/users/:id` | Habilitations (`admin`).                                                       |
+| `POST /v1/admin/users/:id/face`                            | Enrôle un visage pour ce compte (`admin`).                                     |
+| `DELETE /v1/admin/lockouts/:identifier`                    | Débloque un identifiant (`admin`).                                             |
 
 Le service écoute à la racine (`/v1/...`) : le WAF doit retirer le préfixe `/auth` avant de transmettre.
 
@@ -98,6 +101,18 @@ password_file .../passwd
 acl_file .../acl                user esp
                                 topic read resilience/led
 ```
+
+### Habilitations
+
+Réservées aux comptes `admin`. `services/AdminServices.ts` :
+
+- **Lister, créer, modifier.** Un compte créé ou modifié a des rôles parmi `customer`, `operator`, `admin` : jamais un rôle de service (`svc:...`), refusé par le schéma.
+- **Le dernier administrateur actif ne peut pas être retiré** (ni par perte du rôle, ni par désactivation) : on se couperait l'accès au back-office. Un administrateur ne peut pas non plus modifier ses propres habilitations, pour éviter de se bloquer par erreur ou de s'auto-promouvoir en silence.
+- **Enrôlement d'un visage** : `POST /v1/admin/users/:id/face`, même validation de la photo que pour la connexion. Enregistré sous l'email du compte (la clé utilisée à la connexion). Une photo sans visage détectable renvoie `422`, propre, sans panne ; une panne du service renvoie `503`.
+- **Déblocage** d'un identifiant verrouillé, avant son échéance.
+- Chaque action est journalisée (`admin_user_created`, `admin_user_updated`, `admin_face_enrolled`, `admin_lockout_cleared`), avec qui l'a faite.
+
+Pas de suppression d'un visage (le service de l'IA n'a pas cette route) : limite documentée dans `ml/face/README.md`.
 
 ### Journalisation (SIEM)
 
