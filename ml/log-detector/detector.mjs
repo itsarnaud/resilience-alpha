@@ -13,7 +13,10 @@ const MIN_FAILURES = Number(env.MIN_FAILURES ?? '5');
 const POLL_MS = Number(env.POLL_SECONDS ?? '5') * 1000;
 const SCORE = Number(env.SCORE ?? '0.95');
 const PROTECTED = new Set(
-  (env.PROTECTED_IPS ?? '127.0.0.1,::1').split(',').map((s) => s.trim()).filter(Boolean),
+  (env.PROTECTED_IPS ?? '127.0.0.1,::1,192.168.137.1,192.168.65.1,172.17.0.1')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 );
 const COOLDOWN_MS = Number(env.COOLDOWN_SECONDS ?? '60') * 1000;
 

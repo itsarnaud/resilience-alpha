@@ -102,7 +102,7 @@ services:
       SUPERVISED_SERVICES: auth=http://auth:3000,api=http://api:3000
       WAF_DENYLIST_FILE: /waf/denylist.conf
       BLOCK_DURATION_SECONDS: '300'
-      PROTECTED_IPS: 127.0.0.1,::1,192.168.137.1
+      PROTECTED_IPS: 127.0.0.1,::1,192.168.137.1,192.168.65.1,172.17.0.1
       MIN_SCORE: '0.6'
       MIN_FAILURES: '5'
       DEDUP_COOLDOWN_SECONDS: '60'
@@ -312,7 +312,7 @@ services:
       MIN_FAILURES: '5'       # échecs pour déclencher (= MIN_FAILURES côté remédiation)
       POLL_SECONDS: '5'       # scrutation temps réel
       SCORE: '0.95'           # doit dépasser MIN_SCORE (0.6) côté remédiation
-      PROTECTED_IPS: 127.0.0.1,::1,192.168.137.1
+      PROTECTED_IPS: 127.0.0.1,::1,192.168.137.1,192.168.65.1,172.17.0.1
     depends_on:
       db-auth: { condition: service_healthy }
     labels:

@@ -45,7 +45,10 @@ const ConfigSchema = z.object({
   WAF_RELOAD_CONTAINER: z.string().optional(),
   BLOCK_DURATION_SECONDS: z.coerce.number().int().positive().default(300),
   /** IP qu'on ne bloque jamais (nous-mêmes, la passerelle) : un faux positif ne doit pas nous couper. */
-  PROTECTED_IPS: z.string().default('127.0.0.1,::1,192.168.137.1').transform(csv),
+  PROTECTED_IPS: z
+    .string()
+    .default('127.0.0.1,::1,192.168.137.1,192.168.65.1,172.17.0.1')
+    .transform(csv),
 
   /** Politique : en dessous, le détecteur signale mais on n'agit pas (un score n'est pas une preuve). */
   MIN_SCORE: z.coerce.number().min(0).max(1).default(0.6),
