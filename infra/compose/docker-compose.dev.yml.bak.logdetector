@@ -1,0 +1,372 @@
+# PROJECT RESILIENCE-ALPHA : pile DEV
+
+name: resilience-alpha-dev
+
+x-node-service: &node-service
+  build:
+    context: ../..
+  restart: unless-stopped
+  labels:
+    logging: promtail
+  networks: [backend, data]
+
+services:
+  auth:
+    <<: *node-service
+    build:
+      context: ../..
+      dockerfile: services/auth/Dockerfile
+    container_name: auth
+    ports: ['3010:3000'] # exposé tant que le WAF n'est pas branché
+    volumes:
+      - ../../services/auth/keys:/repo/services/auth/keys:ro
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: postgresql://${DB_AUTH_USER}:${DB_AUTH_PASSWORD}@db-auth:5432/${DB_AUTH_NAME}
+      JWT_PRIVATE_KEY_FILE: /repo/services/auth/keys/jwt.pem
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      ACCESS_TOKEN_TTL_SECONDS: '900'
+      BCRYPT_ROUNDS: '10'
+      TRUST_PROXY: loopback,uniquelocal
+      SEED_OPERATOR_EMAIL: ${SEED_OPERATOR_EMAIL}
+      SEED_OPERATOR_PASSWORD: ${SEED_OPERATOR_PASSWORD}
+      SEED_VICTIM_EMAIL: ${SEED_VICTIM_EMAIL}
+      SEED_VICTIM_PASSWORD: ${SEED_VICTIM_PASSWORD}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      SEED_SVC_DETECTOR_SECRET: ${SVC_DETECTOR_SECRET}
+      SEED_SVC_DASHBOARD_SECRET: ${SVC_DASHBOARD_SECRET}
+      SEED_SVC_REMEDIATION_SECRET: ${SVC_REMEDIATION_SECRET}
+      FACE_VERIFIER: http
+      FACE_SERVICE_URL: http://face:5000
+      FACE_MIN_DELAY_MS: '400'
+      BACKOFFICE_MAX_FAILURES: '2'
+      BACKOFFICE_LOCK_SECONDS: '300'
+      BACKOFFICE_LOCK_MAX_SECONDS: '3600'
+      FACE_REFUSED_COOLDOWN_SECONDS: '30'
+      PASSWORD_REFUSED_COOLDOWN_SECONDS: '6'
+      BACKOFFICE_SESSION_TTL_SECONDS: '120'
+      MQTT_URL: mqtt://mosquitto:1883
+      MQTT_USERNAME: ${MQTT_AUTH_USERNAME}
+      MQTT_PASSWORD: ${MQTT_AUTH_PASSWORD}
+      MQTT_LED_TOPIC: resilience/led
+      LED_GREEN_SOLID_SECONDS: '30'
+      LED_RED_SOLID_SECONDS: '30'
+      LED_RED_BLINK_SECONDS: '6'
+    depends_on:
+      db-auth: { condition: service_healthy }
+      face: { condition: service_started }
+
+  api:
+    <<: *node-service
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile
+    container_name: api
+    ports: ['3001:3000'] # exposé tant que le WAF n'est pas branché (tests via Vite en dev)
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: postgresql://${DB_PAIEMENT_USER}:${DB_PAIEMENT_PASSWORD}@db-paiement:5432/${DB_PAIEMENT_NAME}
+      AUTH_JWKS_URL: http://auth:3000/.well-known/jwks.json
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      EXTERNAL_TRANSFER_LIMIT_CENTS: '50000'
+      INITIAL_BALANCE_CENTS: '100000'
+      MAX_ACCOUNTS_PER_USER: '5'
+      TRUST_PROXY: loopback,uniquelocal
+    depends_on:
+      db-paiement: { condition: service_healthy }
+      auth: { condition: service_healthy }
+
+  remediation:
+    <<: *node-service
+    build:
+      context: ../..
+      dockerfile: services/remediation/Dockerfile
+    container_name: remediation
+    ports: ['3002:3000'] # exposé tant que le WAF n'est pas branché (tests via Vite en dev)
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: postgresql://${DB_REMEDIATION_USER}:${DB_REMEDIATION_PASSWORD}@db-remediation:5432/${DB_REMEDIATION_NAME}
+      AUTH_JWKS_URL: http://auth:3000/.well-known/jwks.json
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      AUTH_URL: http://auth:3000
+      API_URL: http://api:3000
+      REMEDIATION_CLIENT_ID: svc-remediation
+      REMEDIATION_CLIENT_SECRET: ${SVC_REMEDIATION_SECRET}
+      SUPERVISED_SERVICES: auth=http://auth:3000,api=http://api:3000
+      WAF_DENYLIST_FILE: /waf/denylist.conf
+      BLOCK_DURATION_SECONDS: '300'
+      PROTECTED_IPS: 127.0.0.1,::1,192.168.137.1
+      MIN_SCORE: '0.6'
+      MIN_FAILURES: '5'
+      DEDUP_COOLDOWN_SECONDS: '60'
+      VERIFY_ATTEMPTS: '5'
+      VERIFY_INTERVAL_MS: '2000'
+      HTTP_TIMEOUT_MS: '3000'
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      ALLOWED_CONTAINERS: api,waf
+      WAF_RELOAD_CONTAINER: waf # signal HUP envoyé au WAF après chaque écriture de la liste de blocage
+      TRUST_PROXY: loopback,uniquelocal
+    volumes:
+      - waf_denylist:/waf
+    depends_on:
+      db-remediation: { condition: service_healthy }
+      auth: { condition: service_healthy }
+      api: { condition: service_healthy }
+    networks: [backend, data, monitoring, remediation]
+
+  # ---------- IA : reconnaissance faciale (MFA back-office) ----------
+  face:
+    build: ../../ml/face
+    container_name: face
+    restart: unless-stopped
+    environment:
+      FACE_THRESHOLD: '0.6'
+    volumes:
+      - face_data:/data
+    networks: [backend, monitoring]
+
+  # ---------- IA : détecteur ML et assistant RAG (ml/ai-runtime) ----------
+  # Image buildée sans modèle ni corpus (montés en lecture seule par volume, voir AI_HANDOFF.md).
+  # Lit/écrit nos vrais JWKS (auth:3000) : ici ces API ne font que LIRE l'état du modèle et
+  # répondre aux questions, elles ne signalent aucun incident (ça reste un worker séparé, non
+  # lancé ici, et bloqué tant que le modèle n'est pas `status: validated`).
+  detector:
+    build:
+      context: ../../ml/ai-runtime
+      dockerfile: deploy/Dockerfile
+    container_name: detector
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    ports: ['8011:8000'] # exposé tant que le WAF n'est pas branché sur /detector
+    environment:
+      AUTH_JWKS_URL: http://auth:3000/.well-known/jwks.json
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      DETECTOR_MODEL_PATH: /app/models/auth_isolation_forest_synthetic.joblib
+      DETECTOR_THRESHOLD_CONFIG: /app/models/auth_threshold_candidate.json
+      DETECTOR_STATE_DB: /app/.storage/observations.sqlite
+    volumes:
+      - ../../ml/ai-runtime/models:/app/models:ro
+      - ai_detector_storage:/app/.storage
+    command:
+      [
+        python,
+        -m,
+        uvicorn,
+        'resilience_alpha_ai.api.detector:create_app',
+        --factory,
+        --host,
+        '0.0.0.0',
+        --port,
+        '8000',
+      ]
+    healthcheck:
+      test:
+        [
+          CMD,
+          python,
+          -c,
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/detector/healthz', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      auth: { condition: service_healthy }
+    networks: [backend]
+
+  assistant:
+    build:
+      context: ../../ml/ai-runtime
+      dockerfile: deploy/Dockerfile
+    container_name: assistant
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    ports: ['8012:8000'] # exposé tant que le WAF n'est pas branché sur /assistant
+    extra_hosts: ['host.docker.internal:host-gateway'] # Ollama tourne sur l'hôte, pas en conteneur
+    environment:
+      AUTH_JWKS_URL: http://auth:3000/.well-known/jwks.json
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      RAG_KNOWLEDGE_DIR: /app/data/knowledge_base
+    volumes:
+      - ../../ml/ai-runtime/data/knowledge_base:/app/data/knowledge_base:ro
+    command:
+      [
+        python,
+        -m,
+        uvicorn,
+        'resilience_alpha_ai.api.assistant:create_app',
+        --factory,
+        --host,
+        '0.0.0.0',
+        --port,
+        '8000',
+      ]
+    healthcheck:
+      test:
+        [
+          CMD,
+          python,
+          -c,
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/assistant/healthz', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      auth: { condition: service_healthy }
+    networks: [backend]
+
+  # ---------- IA : observateur continu (Loki -> ML -> incidents), mode preview uniquement ----------
+  # Interroge Loki toutes les 5 s pour les logs d'auth, score chaque IP, persiste les incidents
+  # détectés localement (.storage/incident_preview.sqlite). N'envoie RIEN à remediation : la
+  # livraison réelle (--mode deliver) exige un modèle `status: validated`, qu'on n'a pas encore
+  # (voir ml/ai-runtime/models/auth_threshold_candidate.json). Purement observationnel pour l'instant.
+  incident-preview:
+    build:
+      context: ../../ml/ai-runtime
+      dockerfile: deploy/Dockerfile
+    container_name: incident-preview
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ../../ml/ai-runtime/models:/app/models:ro
+      - ai_incident_preview_storage:/app/.storage
+    command:
+      [
+        python,
+        -m,
+        resilience_alpha_ai.anomaly_detection.incident_worker,
+        --mode,
+        preview,
+        --loki-url,
+        http://loki:3100,
+        --query,
+        '{container="auth"}',
+        --model,
+        /app/models/auth_isolation_forest_synthetic.joblib,
+        --threshold-config,
+        /app/models/auth_threshold_candidate.json,
+        --pipeline-db,
+        /app/.storage/incident_preview.sqlite,
+      ]
+    depends_on:
+      auth: { condition: service_healthy }
+    networks: [backend, monitoring]
+
+  # ---------- Applications statiques (nginx) : attendent le WAF pour /auth/*, /api/*, /remediation/* ----------
+  front:
+    build:
+      context: ../..
+      dockerfile: services/front/Dockerfile
+    container_name: front
+    restart: unless-stopped
+    ports: ['5173:8080'] # accès direct hors-WAF, pour vérifier que la page se charge
+    networks: [backend]
+
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: services/dashboard/Dockerfile
+    container_name: dashboard
+    restart: unless-stopped
+    ports: ['5174:8080']
+    networks: [backend]
+
+  backoffice:
+    build:
+      context: ../..
+      dockerfile: services/backoffice/Dockerfile
+    container_name: backoffice
+    restart: unless-stopped
+    ports: ['5175:8080']
+    networks: [backend]
+
+  # ---------- Bases de données PostgreSQL (une par service) ----------
+  db-auth:
+    image: postgres:16-alpine
+    container_name: db-auth
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_AUTH_USER}
+      POSTGRES_PASSWORD: ${DB_AUTH_PASSWORD}
+      POSTGRES_DB: ${DB_AUTH_NAME}
+    volumes: [db_auth_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      retries: 5
+    networks: [data]
+
+  db-paiement:
+    image: postgres:16-alpine
+    container_name: db-paiement
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_PAIEMENT_USER}
+      POSTGRES_PASSWORD: ${DB_PAIEMENT_PASSWORD}
+      POSTGRES_DB: ${DB_PAIEMENT_NAME}
+    volumes: [db_paiement_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      retries: 5
+    networks: [data]
+
+  db-remediation:
+    image: postgres:16-alpine
+    container_name: db-remediation
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_REMEDIATION_USER}
+      POSTGRES_PASSWORD: ${DB_REMEDIATION_PASSWORD}
+      POSTGRES_DB: ${DB_REMEDIATION_NAME}
+    volumes: [db_remediation_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      retries: 5
+    networks: [data]
+
+networks:
+  backend: # applications entre elles + mosquitto (créé par la pile infra)
+    name: resilience-alpha_backend
+    external: true
+  monitoring: # Prometheus, Loki, Grafana, Wazuh (créé par la pile infra)
+    name: resilience-alpha_monitoring
+    external: true
+  data: # applications <-> bases de données (propre à cette pile)
+    name: resilience-alpha_data
+  remediation: # remediation <-> docker-socket-proxy (créé par la pile infra)
+    name: resilience-alpha_remediation
+    external: true
+
+volumes:
+  face_data:
+    name: resilience-alpha_face_data
+  ai_detector_storage:
+    name: resilience-alpha_ai_detector_storage
+  ai_incident_preview_storage:
+    name: resilience-alpha_ai_incident_preview_storage
+  waf_denylist: # partagée avec le WAF de la pile cyber une fois branchée (volume externe à confirmer)
+    name: resilience-alpha_waf_denylist
+  db_auth_data:
+    name: resilience-alpha_db_auth_data
+  db_paiement_data:
+    name: resilience-alpha_db_paiement_data
+  db_remediation_data:
+    name: resilience-alpha_db_remediation_data
