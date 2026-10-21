@@ -95,3 +95,7 @@ Workshop2026-M2-G*/
 
 # Liste de blocage générée en local par la remédiation
 services/remediation/waf/
+
+# Comptes d'auto-test et journaux d'attaque generes par attacks/attacks/lab.py
+attacks/attacks/comptes.json
+attacks/attacks/logs/

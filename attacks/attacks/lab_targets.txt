@@ -1,0 +1,5 @@
+# Comptes vises par l'attaque (Red Team).
+# Comptes crees par : docker compose -f docker-compose.dev.yml exec auth node dist/scripts/seed.js
+# Identifiants : voir SEED_* dans infra/compose/.env
+victime@resilience.local
+operator@resilience.local

@@ -48,3 +48,6 @@ bubbles
 1234567890
 superman
 hannah
+azerty123
+operator-dev-pwd
+admin-dev-pwd
