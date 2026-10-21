@@ -110,7 +110,8 @@ services:
       VERIFY_INTERVAL_MS: '2000'
       HTTP_TIMEOUT_MS: '3000'
       DOCKER_HOST: tcp://docker-socket-proxy:2375
-      ALLOWED_CONTAINERS: api
+      ALLOWED_CONTAINERS: api,waf
+      WAF_RELOAD_CONTAINER: waf # signal HUP envoyé au WAF après chaque écriture de la liste de blocage
       TRUST_PROXY: loopback,uniquelocal
     volumes:
       - waf_denylist:/waf
