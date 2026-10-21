@@ -131,6 +131,104 @@ services:
       - face_data:/data
     networks: [backend, monitoring]
 
+  # ---------- IA : détecteur ML et assistant RAG (ml/ai-runtime) ----------
+  # Image buildée sans modèle ni corpus (montés en lecture seule par volume, voir AI_HANDOFF.md).
+  # Lit/écrit nos vrais JWKS (auth:3000) : ici ces API ne font que LIRE l'état du modèle et
+  # répondre aux questions, elles ne signalent aucun incident (ça reste un worker séparé, non
+  # lancé ici, et bloqué tant que le modèle n'est pas `status: validated`).
+  detector:
+    build:
+      context: ../../ml/ai-runtime
+      dockerfile: deploy/Dockerfile
+    container_name: detector
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    ports: ['8011:8000'] # exposé tant que le WAF n'est pas branché sur /detector
+    environment:
+      AUTH_JWKS_URL: http://auth:3000/.well-known/jwks.json
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      DETECTOR_MODEL_PATH: /app/models/auth_isolation_forest_synthetic.joblib
+      DETECTOR_THRESHOLD_CONFIG: /app/models/auth_threshold_candidate.json
+      DETECTOR_STATE_DB: /app/.storage/observations.sqlite
+    volumes:
+      - ../../ml/ai-runtime/models:/app/models:ro
+      - ai_detector_storage:/app/.storage
+    command:
+      [
+        python,
+        -m,
+        uvicorn,
+        'resilience_alpha_ai.api.detector:create_app',
+        --factory,
+        --host,
+        '0.0.0.0',
+        --port,
+        '8000',
+      ]
+    healthcheck:
+      test:
+        [
+          CMD,
+          python,
+          -c,
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/detector/healthz', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      auth: { condition: service_healthy }
+    networks: [backend]
+
+  assistant:
+    build:
+      context: ../../ml/ai-runtime
+      dockerfile: deploy/Dockerfile
+    container_name: assistant
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    ports: ['8012:8000'] # exposé tant que le WAF n'est pas branché sur /assistant
+    extra_hosts: ['host.docker.internal:host-gateway'] # Ollama tourne sur l'hôte, pas en conteneur
+    environment:
+      AUTH_JWKS_URL: http://auth:3000/.well-known/jwks.json
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      RAG_KNOWLEDGE_DIR: /app/data/knowledge_base
+    volumes:
+      - ../../ml/ai-runtime/data/knowledge_base:/app/data/knowledge_base:ro
+    command:
+      [
+        python,
+        -m,
+        uvicorn,
+        'resilience_alpha_ai.api.assistant:create_app',
+        --factory,
+        --host,
+        '0.0.0.0',
+        --port,
+        '8000',
+      ]
+    healthcheck:
+      test:
+        [
+          CMD,
+          python,
+          -c,
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/assistant/healthz', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      auth: { condition: service_healthy }
+    networks: [backend]
+
   # ---------- Applications statiques (nginx) : attendent le WAF pour /auth/*, /api/*, /remediation/* ----------
   front:
     build:
@@ -221,6 +319,8 @@ networks:
 volumes:
   face_data:
     name: resilience-alpha_face_data
+  ai_detector_storage:
+    name: resilience-alpha_ai_detector_storage
   waf_denylist: # partagée avec le WAF de la pile cyber une fois branchée (volume externe à confirmer)
     name: resilience-alpha_waf_denylist
   db_auth_data:
