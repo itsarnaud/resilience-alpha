@@ -1,0 +1,71 @@
+---
+# Bascule d'une base PostgreSQL sur sa réplique (redondance, niveau 2).
+#
+#   docker compose -f docker-compose.infra.yml exec ansible \
+#     ansible-playbook playbooks/bascule-db.yml -e base=paiement
+#
+# base = auth | paiement | remediation
+# Étapes : vérifier que la réplique est bien en attente -> arrêter la primaire -> promouvoir la
+# réplique -> lui donner le nom réseau "db-<base>" pour que les services s'y reconnectent seuls.
+# Agit via docker-socket-proxy-ha (pile infra + docker-compose.infra.redondance.yml).
+- name: Bascule de la base db-{{ base }} sur sa replique
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    DOCKER_HOST: tcp://docker-socket-proxy-ha:2375
+  vars:
+    primary: "db-{{ base }}"
+    replica: "db-{{ base }}-replica"
+    data_network: resilience-alpha_data
+    pgdata: /var/lib/postgresql/data
+  tasks:
+    - name: Verifier le nom de la base
+      ansible.builtin.assert:
+        that: base is defined and base in ['auth', 'paiement', 'remediation']
+        fail_msg: "Indiquer -e base=auth|paiement|remediation"
+
+    - name: "Verifier que {{ replica }} est bien une replique en attente"
+      ansible.builtin.command: "docker exec {{ replica }} test -f {{ pgdata }}/standby.signal"
+      register: standby
+      changed_when: false
+      failed_when: false
+
+    - name: Arreter si la replique a deja ete promue
+      ansible.builtin.fail:
+        msg: "{{ replica }} n'est pas (ou plus) une replique : bascule deja faite ?"
+      when: standby.rc != 0
+
+    - name: "Arreter l'ancienne primaire {{ primary }} (si elle tourne encore)"
+      ansible.builtin.command: "docker stop {{ primary }}"
+      register: stop_primary
+      changed_when: stop_primary.rc == 0
+      failed_when: false
+
+    - name: "Promouvoir {{ replica }} en primaire"
+      ansible.builtin.command: "docker exec -u postgres {{ replica }} pg_ctl promote -w -D {{ pgdata }}"
+      changed_when: true
+
+    - name: "Retirer {{ replica }} du reseau {{ data_network }}"
+      ansible.builtin.command: "docker network disconnect {{ data_network }} {{ replica }}"
+      changed_when: true
+
+    - name: "Le reconnecter avec le nom {{ primary }} : les services s'y reconnectent sans changer de config"
+      ansible.builtin.command: >-
+        docker network connect --alias {{ primary }} --alias {{ replica }}
+        {{ data_network }} {{ replica }}
+      changed_when: true
+
+    - name: Attendre que la nouvelle primaire accepte les ecritures
+      ansible.builtin.command: "docker exec {{ replica }} pg_isready -h 127.0.0.1 -q"
+      register: ready
+      retries: 15
+      delay: 2
+      until: ready.rc == 0
+      changed_when: false
+
+    - name: Resume
+      ansible.builtin.debug:
+        msg:
+          - "Bascule terminee : {{ replica }} est la primaire, joignable sous le nom {{ primary }}."
+          - "Ne PAS relancer 'docker compose up -d' avant le retour a la normale (README-redondance.md)."

@@ -1,0 +1,185 @@
+# PROJECT RESILIENCE-ALPHA : redondance de la pile DEV
+# Fichier à superposer à docker-compose.dev.yml (il ne le remplace pas) :
+#   docker compose -f docker-compose.dev.yml -f docker-compose.dev.redondance.yml up -d
+# Détail et procédures : README-redondance.md
+#
+# Niveau 1 : une 2e instance des services sans état (auth, api, front, dashboard, backoffice).
+#   Chaque 2e instance porte l'alias réseau du service d'origine : "auth" désigne alors les deux
+#   conteneurs, le DNS Docker répartit entre eux, et le WAF bascule sur l'autre si l'un tombe.
+# Niveau 2 : une réplique PostgreSQL en continu (streaming) pour chaque base, et des sauvegardes.
+
+services:
+  # ---------- Niveau 1 : 2e instance des services applicatifs ----------
+  auth-2:
+    extends: { file: docker-compose.dev.yml, service: auth }
+    container_name: auth-2
+    ports: !reset []
+    networks:
+      backend: { aliases: [auth] }
+      data: {}
+
+  api-2:
+    extends: { file: docker-compose.dev.yml, service: api }
+    container_name: api-2
+    ports: !reset []
+    networks:
+      backend: { aliases: [api] }
+      data: {}
+
+  front-2:
+    extends: { file: docker-compose.dev.yml, service: front }
+    container_name: front-2
+    ports: !reset []
+    networks:
+      backend: { aliases: [front] }
+
+  dashboard-2:
+    extends: { file: docker-compose.dev.yml, service: dashboard }
+    container_name: dashboard-2
+    ports: !reset []
+    networks:
+      backend: { aliases: [dashboard] }
+
+  backoffice-2:
+    extends: { file: docker-compose.dev.yml, service: backoffice }
+    container_name: backoffice-2
+    ports: !reset []
+    networks:
+      backend: { aliases: [backoffice] }
+
+  # ---------- Niveau 2 : les bases primaires acceptent la réplication ----------
+  # Seul ajout aux bases existantes : un pg_hba.conf qui autorise le compte "replicator",
+  # et des journaux (WAL) gardés plus longtemps pour qu'une réplique en retard rattrape.
+  db-auth:
+    command: [postgres, -c, hba_file=/etc/postgresql/pg_hba.conf, -c, wal_keep_size=256MB]
+    volumes: [./redondance/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro]
+
+  db-paiement:
+    command: [postgres, -c, hba_file=/etc/postgresql/pg_hba.conf, -c, wal_keep_size=256MB]
+    volumes: [./redondance/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro]
+
+  db-remediation:
+    command: [postgres, -c, hba_file=/etc/postgresql/pg_hba.conf, -c, wal_keep_size=256MB]
+    volumes: [./redondance/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro]
+
+  # Crée (ou met à jour) le compte de réplication sur chaque base primaire. Tâche unique.
+  # Son mot de passe est celui de la base (DB_xxx_PASSWORD) : pas de variable en plus dans le .env.
+  db-replication-init:
+    image: postgres:16-alpine
+    container_name: db-replication-init
+    restart: 'no'
+    entrypoint: [/bin/sh, /redondance/init-replication.sh]
+    environment:
+      DB_AUTH_USER: ${DB_AUTH_USER}
+      DB_AUTH_PASSWORD: ${DB_AUTH_PASSWORD}
+      DB_AUTH_NAME: ${DB_AUTH_NAME}
+      DB_PAIEMENT_USER: ${DB_PAIEMENT_USER}
+      DB_PAIEMENT_PASSWORD: ${DB_PAIEMENT_PASSWORD}
+      DB_PAIEMENT_NAME: ${DB_PAIEMENT_NAME}
+      DB_REMEDIATION_USER: ${DB_REMEDIATION_USER}
+      DB_REMEDIATION_PASSWORD: ${DB_REMEDIATION_PASSWORD}
+      DB_REMEDIATION_NAME: ${DB_REMEDIATION_NAME}
+    volumes: [./redondance/postgres:/redondance:ro]
+    depends_on:
+      db-auth: { condition: service_healthy }
+      db-paiement: { condition: service_healthy }
+      db-remediation: { condition: service_healthy }
+    networks: [data]
+
+  # ---------- Niveau 2 : répliques en lecture seule (hot standby) ----------
+  db-auth-replica:
+    image: postgres:16-alpine
+    container_name: db-auth-replica
+    restart: unless-stopped
+    entrypoint: [/bin/sh, /redondance/replica-entrypoint.sh]
+    environment:
+      PRIMARY_HOST: db-auth
+      REPLICATION_PASSWORD: ${DB_AUTH_PASSWORD} # même mot de passe que la base : rien à ajouter au .env
+    volumes:
+      - db_auth_replica_data:/var/lib/postgresql/data
+      - ./redondance/postgres:/redondance:ro
+    healthcheck: &replica-healthcheck
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U replicator -d postgres -q']
+      interval: 10s
+      start_period: 60s
+      retries: 5
+    depends_on:
+      db-replication-init: { condition: service_completed_successfully }
+    labels:
+      logging: promtail
+    networks: [data]
+
+  db-paiement-replica:
+    image: postgres:16-alpine
+    container_name: db-paiement-replica
+    restart: unless-stopped
+    entrypoint: [/bin/sh, /redondance/replica-entrypoint.sh]
+    environment:
+      PRIMARY_HOST: db-paiement
+      REPLICATION_PASSWORD: ${DB_PAIEMENT_PASSWORD}
+    volumes:
+      - db_paiement_replica_data:/var/lib/postgresql/data
+      - ./redondance/postgres:/redondance:ro
+    healthcheck: *replica-healthcheck
+    depends_on:
+      db-replication-init: { condition: service_completed_successfully }
+    labels:
+      logging: promtail
+    networks: [data]
+
+  db-remediation-replica:
+    image: postgres:16-alpine
+    container_name: db-remediation-replica
+    restart: unless-stopped
+    entrypoint: [/bin/sh, /redondance/replica-entrypoint.sh]
+    environment:
+      PRIMARY_HOST: db-remediation
+      REPLICATION_PASSWORD: ${DB_REMEDIATION_PASSWORD}
+    volumes:
+      - db_remediation_replica_data:/var/lib/postgresql/data
+      - ./redondance/postgres:/redondance:ro
+    healthcheck: *replica-healthcheck
+    depends_on:
+      db-replication-init: { condition: service_completed_successfully }
+    labels:
+      logging: promtail
+    networks: [data]
+
+  # ---------- Niveau 2 : sauvegardes régulières (pg_dump) ----------
+  # Une réplique recopie aussi les erreurs (DROP, suppression) : la sauvegarde permet de revenir
+  # en arrière. Fichiers écrits dans redondance/backups/ (hors Git), sur la machine hôte.
+  db-backup:
+    image: postgres:16-alpine
+    container_name: db-backup
+    restart: unless-stopped
+    entrypoint: [/bin/sh, /redondance/backup.sh]
+    environment:
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-3600}
+      BACKUP_KEEP: ${BACKUP_KEEP:-24}
+      DB_AUTH_USER: ${DB_AUTH_USER}
+      DB_AUTH_PASSWORD: ${DB_AUTH_PASSWORD}
+      DB_AUTH_NAME: ${DB_AUTH_NAME}
+      DB_PAIEMENT_USER: ${DB_PAIEMENT_USER}
+      DB_PAIEMENT_PASSWORD: ${DB_PAIEMENT_PASSWORD}
+      DB_PAIEMENT_NAME: ${DB_PAIEMENT_NAME}
+      DB_REMEDIATION_USER: ${DB_REMEDIATION_USER}
+      DB_REMEDIATION_PASSWORD: ${DB_REMEDIATION_PASSWORD}
+      DB_REMEDIATION_NAME: ${DB_REMEDIATION_NAME}
+    volumes:
+      - ./redondance/postgres:/redondance:ro
+      - ./redondance/backups:/backups
+    depends_on:
+      db-auth: { condition: service_healthy }
+      db-paiement: { condition: service_healthy }
+      db-remediation: { condition: service_healthy }
+    labels:
+      logging: promtail
+    networks: [data]
+
+volumes:
+  db_auth_replica_data:
+    name: resilience-alpha_db_auth_replica_data
+  db_paiement_replica_data:
+    name: resilience-alpha_db_paiement_replica_data
+  db_remediation_replica_data:
+    name: resilience-alpha_db_remediation_replica_data
