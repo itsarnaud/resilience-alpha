@@ -69,11 +69,15 @@ docker build -f services/backoffice/Dockerfile -t resilience-backoffice .
 docker run -p 8080:8080 resilience-backoffice
 ```
 
-**À prévoir côté WAF :** router vers ce conteneur, et `/auth/*` vers `auth`, préfixe retiré.
+**Côté WAF :** route vers ce conteneur, et `/auth/*` vers `auth`, préfixe retiré. **Fait**, sur son propre port (voir ci-dessous).
 
 ## Avec Docker Compose (toute la plateforme)
 
-Le conteneur `backoffice` de [`infra/compose/docker-compose.dev.yml`](../../infra/compose/docker-compose.dev.yml) tourne (voir la section [« Lancer toute la plateforme »](../../README.md#lancer-toute-la-plateforme-docker-compose) du README principal), mais tant que le WAF (pile cyber) n'est pas branché, ses appels `/auth` échouent — c'est attendu. Pour tester quand même, `auth` est publié sur l'hôte (`3010`) : `AUTH_URL=http://localhost:3010 npm run dev -w services/backoffice` fonctionne contre le vrai conteneur (si le port `5175` est déjà pris par le conteneur `backoffice`, Vite bascule automatiquement sur `5176`).
+Le conteneur `backoffice` de [`infra/compose/docker-compose.dev.yml`](../../infra/compose/docker-compose.dev.yml) tourne derrière le WAF (voir la section [« Lancer toute la plateforme »](../../README.md#lancer-toute-la-plateforme-docker-compose) du README principal) : **http://localhost:8082**. Identifiant et mot de passe passent. Si le WAF n'est pas lancé (pile cyber), `auth` reste joignable directement pour tester sans lui : `AUTH_URL=http://localhost:3010 npm run dev -w services/backoffice` fonctionne (Vite bascule sur un port libre si `5175` est pris par le conteneur).
+
+### Limite connue avec le WAF (en cours de correction côté cyber)
+
+L'étape photo envoie un corps `Content-Type: image/jpeg`, que les règles OWASP CRS par défaut n'autorisent pas (anomalie bloquante, **403**). L'exception prévue dans `custom-before.conf` (passer cette route en `DetectionOnly`) ciblait encore l'ancien chemin `/api/auth` au lieu de `/auth/v1/backoffice/login/:id/face` : signalé à la cyber le 2026-10-21, correctif transmis. En attendant, tester la photo en direct sur l'auth exposé (`:3010`), pas à travers le WAF.
 
 ## Limites assumées
 

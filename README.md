@@ -49,7 +49,7 @@ Chaque service a son propre `.env.example` (`services/<nom>/.env.example`) avec 
 
 ## Lancer toute la plateforme (Docker Compose)
 
-Démarre tout avec des images construites depuis le code réel (`services/*`), comme en démo — pas les prototypes `apps/*` ni des serveurs `npm run dev`. La pile est coupée en 3 fichiers Compose (voir [`infra/compose/README.md`](infra/compose/README.md)) : **infra** (observabilité, mosquitto, Ansible), **dev** (les 7 services DEV + leurs bases + l'IA faciale), **cyber** (WAF, SIEM).
+Démarre tout avec des images construites depuis le code réel (`services/*`), comme en démo — pas les prototypes `apps/*` ni des serveurs `npm run dev`. La pile est coupée en 3 fichiers Compose (voir [`infra/compose/README.md`](infra/compose/README.md)) : **infra** (observabilité, mosquitto, Ansible), **dev** (les 7 services DEV + leurs bases, l'IA faciale, le détecteur et l'assistant RAG), **cyber** (WAF, SIEM — routage par préfixe fait pour `/auth`, `/api`, `/remediation`).
 
 ### 1. Préparer la configuration (une fois)
 
@@ -62,11 +62,23 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out ../../services
 
 La clé JWT est obligatoire : sans elle, le conteneur `auth` (qui tourne en `NODE_ENV=production`) refuse de démarrer plutôt que d'utiliser une clé éphémère.
 
-### 2. Lancer l'infra, puis la pile dev
+**Détecteur et assistant (IA, `ml/ai-runtime`)** : le modèle ML et la base de connaissances ne sont pas dans le dépôt (gitignorés, données trop lourdes ou sensibles). Les récupérer depuis la livraison de l'IA (archive `resilience-ai-complete-*.zip` ou équivalent) et les placer dans :
 
 ```bash
-docker compose -f docker-compose.infra.yml up -d --build   # réseaux partagés, Prometheus, Grafana, Loki, mosquitto, Ansible
-docker compose -f docker-compose.dev.yml   up -d --build   # auth, api, remediation, front, dashboard, backoffice, face, 3 bases
+# Depuis la racine du dépôt, après avoir extrait la livraison IA quelque part :
+mkdir -p ml/ai-runtime/models ml/ai-runtime/data
+cp <livraison>/models/*.joblib <livraison>/models/*.json ml/ai-runtime/models/
+cp -R <livraison>/data/knowledge_base ml/ai-runtime/data/
+```
+
+Sans ça, le conteneur `detector` démarre puis boucle en échec (modèle introuvable). Nécessite aussi Ollama lancé sur la machine hôte (`qwen2.5:3b` et `embeddinggemma:300m` téléchargés : `ollama pull qwen2.5:3b && ollama pull embeddinggemma:300m`) — voir `ml/ai-runtime/deploy/AI_HANDOFF.md`.
+
+### 2. Lancer l'infra, puis la pile dev, puis le WAF
+
+```bash
+docker compose -f docker-compose.infra.yml  up -d --build   # réseaux partagés, Prometheus, Grafana, Loki, mosquitto, Ansible
+docker compose -f docker-compose.dev.yml    up -d --build   # auth, api, remediation, front, dashboard, backoffice, face, detector, assistant, 3 bases
+docker compose -f docker-compose.cyber.yml  up -d waf       # WAF seul suffit pour tester (le SIEM complet est plus lourd)
 ```
 
 Vérifier que tout est sain :
@@ -86,16 +98,33 @@ Identifiants créés : voir `SEED_*` dans `infra/compose/.env`. Le visage de l'a
 
 ### Ce qui est joignable, et comment
 
-| Adresse                                                   | Service                           | Remarque                                                                             |
-| ---------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------- |
-| http://localhost:3010                                      | `auth` (interne : `auth:3000`)     | Exposé tant que le WAF n'existe pas. JWKS sur `/.well-known/jwks.json`.              |
-| http://localhost:3001                                      | `api` (interne : `api:3000`)       | Idem.                                                                                 |
-| http://localhost:3002                                      | `remediation` (interne : `:3000`)  | Idem.                                                                                 |
-| http://localhost:5173, 5174, 5175                          | `front`, `dashboard`, `backoffice` | Pages statiques servies, mais leurs appels `/auth`, `/api`, `/remediation` **échouent tant que le WAF n'est pas branché** (pile cyber, volontairement fait en dernier). |
-| http://localhost:9090                                      | Prometheus                         | `/targets` pour vérifier que les services sont scrapés.                              |
-| http://localhost:3000                                      | Grafana                            | Identifiants : `GRAFANA_ADMIN_*` dans `.env`.                                        |
+**Via le WAF (pile cyber lancée) — c'est ce qui tournera le jour J :**
 
-**Tester le navigateur dès maintenant, sans attendre le WAF :** chaque README de `front`/`dashboard`/`backoffice` explique comment lancer son serveur Vite (qui sait déjà proxyfier `/auth`, `/api`, `/remediation`) contre les conteneurs `auth:3010`, `api:3001`, `remediation:3002` publiés ci-dessus. C'est une béquille de développement, pas ce qui tournera le jour J.
+| Adresse               | Service      | Remarque                                                        |
+| ---------------------- | ------------ | ----------------------------------------------------------------- |
+| http://localhost       | `front`      | Banque client. `/auth/*` et `/api/*` routés, préfixe retiré.      |
+| http://localhost:8081  | `dashboard`  | Supervision. `/auth/*` et `/remediation/*` routés. `/assistant/*` et `/detector/*` **pas encore routés** (à transmettre à la cyber). |
+| http://localhost:8082  | `backoffice` | Admin + visage. `/auth/*` routé.                                  |
+
+Chaque front a son propre port WAF (les 3 apps React sont compilées pour la racine `/`, elles ne peuvent pas partager un seul port avec des sous-chemins sans être reconstruites).
+
+**Limites connues (en cours de correction côté cyber) :**
+- L'étape photo du back-office (`POST /auth/v1/backoffice/login/:id/face`, corps `image/jpeg`) est bloquée par ModSecurity (403) tant que l'exception de `custom-before.conf` ne cible pas ce chemin — voir `services/backoffice/README.md`.
+- `/assistant/*` et `/detector/*` n'ont pas encore de route WAF ; contrairement à `/auth`/`/api`/`/remediation`, **le préfixe ne doit pas être retiré** (ces API le servent déjà elles-mêmes).
+
+**Accès directs (debug, sans passer par le WAF) :**
+
+| Adresse               | Service                             | Remarque                              |
+| ---------------------- | ------------------------------------- | -------------------------------------- |
+| http://localhost:3010  | `auth` (interne : `auth:3000`)        | JWKS sur `/.well-known/jwks.json`.     |
+| http://localhost:3001  | `api` (interne : `api:3000`)          |                                         |
+| http://localhost:3002  | `remediation` (interne : `:3000`)     |                                         |
+| http://localhost:8011  | `detector` (interne : `detector:8000`) | `GET /detector/v1/model`, `/v1/anomalies`. |
+| http://localhost:8012  | `assistant` (interne : `assistant:8000`) | `POST /assistant/v1/chat`.           |
+| http://localhost:9090  | Prometheus                            | `/targets` pour vérifier le scraping.  |
+| http://localhost:3000  | Grafana                               | Identifiants : `GRAFANA_ADMIN_*`.      |
+
+**Si le WAF n'est pas lancé** (pile cyber pas démarrée) : chaque README de `front`/`dashboard`/`backoffice` explique comment lancer son serveur Vite (qui sait proxyfier `/auth`, `/api`, `/remediation`, `/assistant`) contre les conteneurs ci-dessus. Une béquille de développement, plus nécessaire une fois le WAF up.
 
 ### Arrêter
 

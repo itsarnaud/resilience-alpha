@@ -70,8 +70,8 @@ docker run -p 8080:8080 resilience-front        # http://localhost:8080
 
 L'image ne contient que nginx et les fichiers compilés (environ 50 Mo), tourne sans droits root et expose `/healthz`.
 
-**À prévoir côté WAF :** servir ce conteneur sur `/`, envoyer `/api/*` vers l'API et `/auth/*` vers `auth` en retirant le préfixe. Sans cela, le navigateur reçoit la page mais aucun appel ne passe.
+**Côté WAF :** sert ce conteneur sur `/`, envoie `/api/*` vers l'API et `/auth/*` vers `auth` en retirant le préfixe. **Fait** (voir `infra/compose/docker-compose.cyber.yml` et `config/waf/`).
 
 ## Avec Docker Compose (toute la plateforme)
 
-Le conteneur `front` de [`infra/compose/docker-compose.dev.yml`](../../infra/compose/docker-compose.dev.yml) tourne (voir la section [« Lancer toute la plateforme »](../../README.md#lancer-toute-la-plateforme-docker-compose) du README principal), mais tant que le WAF (pile cyber) n'est pas branché, ses appels `/auth` et `/api` échouent — c'est attendu, pas un bug. Pour tester quand même : `auth` et `api` sont publiés sur l'hôte (`3010` et `3001`), donc `AUTH_URL=http://localhost:3010 API_URL=http://localhost:3001 npm run dev -w services/front` fonctionne contre les vrais conteneurs.
+Le conteneur `front` de [`infra/compose/docker-compose.dev.yml`](../../infra/compose/docker-compose.dev.yml) tourne derrière le WAF (voir la section [« Lancer toute la plateforme »](../../README.md#lancer-toute-la-plateforme-docker-compose) du README principal) : **http://localhost** (port 80), appels `/auth` et `/api` fonctionnels. Si le WAF n'est pas lancé (pile cyber), les mêmes conteneurs restent joignables directement pour tester sans lui : `auth` sur `3010`, `api` sur `3001`, donc `AUTH_URL=http://localhost:3010 API_URL=http://localhost:3001 npm run dev -w services/front` fonctionne.

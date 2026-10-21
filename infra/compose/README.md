@@ -15,8 +15,9 @@ La stack est découpée en **3 piles** (3 projets Docker Compose) qui tournent s
 
 - Docker Desktop (ou Docker Engine + Compose v2) démarré
 - Environ 4 Go de RAM libres pour l'ensemble de la stack
-- Ports libres sur la machine : `80`, `1883`, `3000`, `3001`, `3002`, `3010`, `5173`, `5174`, `5175`, `9090`, `1514`, `1515`, `55000` (`3000` est pris par Grafana : `auth` est donc publié sur `3010`, voir [le README principal](../../README.md#lancer-toute-la-plateforme-docker-compose))
+- Ports libres sur la machine : `80`, `1883`, `3000`, `3001`, `3002`, `3010`, `5173`, `5174`, `5175`, `8011`, `8012`, `8081`, `8082`, `9090`, `1514`, `1515`, `55000` (`3000` est pris par Grafana : `auth` est donc publié sur `3010`, voir [le README principal](../../README.md#lancer-toute-la-plateforme-docker-compose))
 - `services/auth/keys/jwt.pem` généré une fois (voir le README principal, section « Lancer toute la plateforme »)
+- `detector`/`assistant` (IA) : le modèle ML et la base de connaissances copiés dans `ml/ai-runtime/models` et `ml/ai-runtime/data` (gitignorés, depuis la livraison de l'IA), et [Ollama](https://ollama.com) lancé sur la machine hôte avec `qwen2.5:3b` et `embeddinggemma:300m` — voir le README principal et `ml/ai-runtime/deploy/AI_HANDOFF.md`.
 
 ## Démarrage rapide
 
@@ -55,6 +56,8 @@ Le premier lancement télécharge et construit les images (quelques minutes). D�
 | `auth`, `api`, `remediation`               | Dev   | Les vrais services (`services/*`, TypeScript, Prisma)                      | `3010`, `3001`, `3002` (exposés tant que le WAF n'existe pas) |
 | `front`, `dashboard`, `backoffice`         | Dev   | Applications React compilées (nginx)                                       | `5173`, `5174`, `5175` — via le WAF à terme                   |
 | `face`                                     | Dev   | Reconnaissance faciale du back-office (IA, `ml/face`)                      | interne (appelé par `auth`)                                   |
+| `detector`                                 | Dev   | Lecture du modèle ML d'anomalies (IA, `ml/ai-runtime`)                     | `8011` (accès direct, debug)                                   |
+| `assistant`                                | Dev   | Assistant RAG, documentation du projet (IA, `ml/ai-runtime` + Ollama hôte) | `8012` (accès direct, debug)                                   |
 | `db-auth`, `db-paiement`, `db-remediation` | Dev   | Une base PostgreSQL 16 par service                                         | interne                                                        |
 | `waf`                                       | Cyber | Reverse proxy Nginx + ModSecurity (règles OWASP CRS), point d'entrée unique | http://localhost                                              |
 | `wazuh-manager`                            | Cyber | SIEM (manager seul, sans interface web)                                     | API : https://localhost:55000                                 |
