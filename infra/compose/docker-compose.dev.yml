@@ -230,6 +230,44 @@ services:
       auth: { condition: service_healthy }
     networks: [backend]
 
+  # ---------- IA : observateur continu (Loki -> ML -> incidents), mode preview uniquement ----------
+  # Interroge Loki toutes les 5 s pour les logs d'auth, score chaque IP, persiste les incidents
+  # détectés localement (.storage/incident_preview.sqlite). N'envoie RIEN à remediation : la
+  # livraison réelle (--mode deliver) exige un modèle `status: validated`, qu'on n'a pas encore
+  # (voir ml/ai-runtime/models/auth_threshold_candidate.json). Purement observationnel pour l'instant.
+  incident-preview:
+    build:
+      context: ../../ml/ai-runtime
+      dockerfile: deploy/Dockerfile
+    container_name: incident-preview
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ../../ml/ai-runtime/models:/app/models:ro
+      - ai_incident_preview_storage:/app/.storage
+    command:
+      [
+        python,
+        -m,
+        resilience_alpha_ai.anomaly_detection.incident_worker,
+        --mode,
+        preview,
+        --loki-url,
+        http://loki:3100,
+        --query,
+        '{container="auth"}',
+        --model,
+        /app/models/auth_isolation_forest_synthetic.joblib,
+        --threshold-config,
+        /app/models/auth_threshold_candidate.json,
+        --pipeline-db,
+        /app/.storage/incident_preview.sqlite,
+      ]
+    depends_on:
+      auth: { condition: service_healthy }
+    networks: [backend, monitoring]
+
   # ---------- Applications statiques (nginx) : attendent le WAF pour /auth/*, /api/*, /remediation/* ----------
   front:
     build:
@@ -322,6 +360,8 @@ volumes:
     name: resilience-alpha_face_data
   ai_detector_storage:
     name: resilience-alpha_ai_detector_storage
+  ai_incident_preview_storage:
+    name: resilience-alpha_ai_incident_preview_storage
   waf_denylist: # partagée avec le WAF de la pile cyber une fois branchée (volume externe à confirmer)
     name: resilience-alpha_waf_denylist
   db_auth_data:
