@@ -1,0 +1,180 @@
+{
+  "windows": 8,
+  "true_positives": 3,
+  "false_positives": 0,
+  "true_negatives": 5,
+  "false_negatives": 0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "false_positive_rate": 0.0,
+  "training_data_origin": "synthetic",
+  "model_status": "prototype_not_validated",
+  "predictions": [
+    {
+      "source_ip": "172.21.0.1",
+      "window_end": "2026-10-21T09:04:37.225269+00:00",
+      "is_anomaly": false,
+      "threshold_status": "provisional_not_validated",
+      "anomaly_score": -0.034526908775268206,
+      "score": 0.4654730912247318,
+      "threshold": 0.6235500624027918,
+      "score_method": "negative_score_samples",
+      "features": {
+        "attempt_count": 2,
+        "failure_count": 0,
+        "success_count": 2,
+        "failure_ratio": 0.0,
+        "unique_accounts": 1
+      },
+      "training_data_origin": "synthetic",
+      "model_status": "prototype_not_validated"
+    },
+    {
+      "source_ip": "172.21.0.1",
+      "window_end": "2026-10-21T09:05:37.810367+00:00",
+      "is_anomaly": false,
+      "threshold_status": "provisional_not_validated",
+      "anomaly_score": -0.01306113391042002,
+      "score": 0.48693886608958,
+      "threshold": 0.6235500624027918,
+      "score_method": "negative_score_samples",
+      "features": {
+        "attempt_count": 5,
+        "failure_count": 1,
+        "success_count": 4,
+        "failure_ratio": 0.2,
+        "unique_accounts": 1
+      },
+      "training_data_origin": "synthetic",
+      "model_status": "prototype_not_validated"
+    },
+    {
+      "source_ip": "172.21.0.1",
+      "window_end": "2026-10-21T09:06:38.405041+00:00",
+      "is_anomaly": false,
+      "threshold_status": "provisional_not_validated",
+      "anomaly_score": -0.0011352241678820318,
+      "score": 0.49886477583211797,
+      "threshold": 0.6235500624027918,
+      "score_method": "negative_score_samples",
+      "features": {
+        "attempt_count": 9,
+        "failure_count": 2,
+        "success_count": 7,
+        "failure_ratio": 0.2222222222222222,
+        "unique_accounts": 1
+      },
+      "training_data_origin": "synthetic",
+      "model_status": "prototype_not_validated"
+    },
+    {
+      "source_ip": "172.21.0.1",
+      "window_end": "2026-10-21T09:07:38.999014+00:00",
+      "is_anomaly": false,
+      "threshold_status": "provisional_not_validated",
+      "anomaly_score": 0.03423323359830932,
+      "score": 0.5342332335983093,
+      "threshold": 0.6235500624027918,
+      "score_method": "negative_score_samples",
+      "features": {
+        "attempt_count": 12,
+        "failure_count": 1,
+        "success_count": 11,
+        "failure_ratio": 0.08333333333333333,
+        "unique_accounts": 1
+      },
+      "training_data_origin": "synthetic",
+      "model_status": "prototype_not_validated"
+    },
+    {
+      "source_ip": "172.21.0.1",
+      "window_end": "2026-10-21T09:08:39.583138+00:00",
+      "is_anomaly": false,
+      "threshold_status": "provisional_not_validated",
+      "anomaly_score": 0.07652608691632423,
+      "score": 0.5765260869163242,
+      "threshold": 0.6235500624027918,
+      "score_method": "negative_score_samples",
+      "features": {
+        "attempt_count": 6,
+        "failure_count": 2,
+        "success_count": 4,
+        "failure_ratio": 0.3333333333333333,
+        "unique_accounts": 1
+      },
+      "training_data_origin": "synthetic",
+      "model_status": "prototype_not_validated"
+    },
+    {
+      "source_ip": "172.21.0.1",
+      "window_end": "2026-10-21T09:09:40.172213+00:00",
+      "is_anomaly": true,
+      "threshold_status": "provisional_not_validated",
+      "anomaly_score": 0.28035115621084394,
+      "score": 0.7803511562108439,
+      "threshold": 0.6235500624027918,
+      "score_method": "negative_score_samples",
+      "features": {
+        "attempt_count": 20,
+        "failure_count": 20,
+        "success_count": 0,
+        "failure_ratio": 1.0,
+        "unique_accounts": 1
+      },
+      "training_data_origin": "synthetic",
+      "model_status": "prototype_not_validated"
+    },
+    {
+      "source_ip": "172.21.0.1",
+      "window_end": "2026-10-21T09:10:40.770546+00:00",
+      "is_anomaly": true,
+      "threshold_status": "provisional_not_validated",
+      "anomaly_score": 0.2664980739647058,
+      "score": 0.7664980739647058,
+      "threshold": 0.6235500624027918,
+      "score_method": "negative_score_samples",
+      "features": {
+        "attempt_count": 8,
+        "failure_count": 8,
+        "success_count": 0,
+        "failure_ratio": 1.0,
+        "unique_accounts": 1
+      },
+      "training_data_origin": "synthetic",
+      "model_status": "prototype_not_validated"
+    },
+    {
+      "source_ip": "172.21.0.1",
+      "window_end": "2026-10-21T09:11:41.380260+00:00",
+      "is_anomaly": true,
+      "threshold_status": "provisional_not_validated",
+      "anomaly_score": 0.28035115621084394,
+      "score": 0.7803511562108439,
+      "threshold": 0.6235500624027918,
+      "score_method": "negative_score_samples",
+      "features": {
+        "attempt_count": 40,
+        "failure_count": 40,
+        "success_count": 0,
+        "failure_ratio": 1.0,
+        "unique_accounts": 1
+      },
+      "training_data_origin": "synthetic",
+      "model_status": "prototype_not_validated"
+    }
+  ],
+  "evaluation_data_origin": "platform",
+  "environment": "local_auth_service_without_waf",
+  "model_sha256": "a590d2f5021f14e3e08bd68e6aa462d0ba7789cabdbee3ad331aaf06202d84ca",
+  "threshold_config_sha256": "38b298bb9d6dad6c5487321d650d6e90bba11e6d0464d1f2cf9911f580c10789",
+  "evaluation_sha256": "4085345a56b8bc104bae7581723bf63ebb6f46620e54234fff3dcf446e20969c",
+  "decision_threshold": 0.6235500624027918,
+  "threshold_status": "provisional_not_validated",
+  "limitations": [
+    "Eight controlled windows on one local account and one Docker-gateway source.",
+    "Labels reflect scripted normal/attack scenarios, not independent security adjudication.",
+    "Model remains trained on synthetic data; this campaign does not change validation status.",
+    "No WAF, separate attacker machine, automatic remediation or detection-latency validation.",
+    "Earlier calibration and evaluation sessions were not reused in this dataset."
+  ]
+}

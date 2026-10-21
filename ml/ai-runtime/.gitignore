@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv*/
+.storage/
+.env
+.env.*
+!.env.example
+deploy/ai.env
+models/*
+!models/.gitkeep
+data/*
+!data/.gitkeep
+*.zip

@@ -1,0 +1,99 @@
+name: resilience-ai-package
+x-ai: &ai
+  image: resilience-alpha-ai:package
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  networks: [ai]
+
+services:
+  detector:
+    <<: *ai
+    ports: ["127.0.0.1:${DETECTOR_PORT:-8011}:8000"]
+    environment:
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL:?Set AUTH_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER:-resilience-auth}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-resilience-platform}
+      DETECTOR_MODEL_PATH: /app/models/auth_isolation_forest_synthetic.joblib
+      DETECTOR_THRESHOLD_CONFIG: /app/models/auth_threshold_candidate.json
+      DETECTOR_STATE_DB: /app/.storage/observations.sqlite
+    volumes:
+      - type: bind
+        source: ../models
+        target: /app/models
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ../.storage
+        target: /app/.storage
+        bind: {create_host_path: false}
+    command: [python, -m, uvicorn, 'resilience_alpha_ai.api.detector:create_app', --factory, --host, '0.0.0.0', --port, '8000']
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/detector/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  assistant:
+    <<: *ai
+    ports: ["127.0.0.1:${ASSISTANT_PORT:-8012}:8000"]
+    environment:
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL:?Set AUTH_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER:-resilience-auth}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-resilience-platform}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:?Set OLLAMA_BASE_URL}
+      RAG_KNOWLEDGE_DIR: /app/data/knowledge_base
+    volumes:
+      - type: bind
+        source: ../data/knowledge_base
+        target: /app/data/knowledge_base
+        read_only: true
+        bind: {create_host_path: false}
+    command: [python, -m, uvicorn, 'resilience_alpha_ai.api.assistant:create_app', --factory, --host, '0.0.0.0', --port, '8000']
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/assistant/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  observer:
+    <<: *ai
+    profiles: [observe]
+    environment:
+      LOKI_URL: ${LOKI_URL:?Set LOKI_URL}
+      LOKI_QUERY: ${LOKI_QUERY:?Set LOKI_QUERY}
+    volumes:
+      - type: bind
+        source: ../models
+        target: /app/models
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ../.storage
+        target: /app/.storage
+        bind: {create_host_path: false}
+    command:
+      - python
+      - -m
+      - resilience_alpha_ai.anomaly_detection.runtime
+      - --loki-url
+      - ${LOKI_URL:?Set LOKI_URL}
+      - --query
+      - ${LOKI_QUERY:?Set LOKI_QUERY}
+      - --model
+      - /app/models/auth_isolation_forest_synthetic.joblib
+      - --threshold-config
+      - /app/models/auth_threshold_candidate.json
+      - --state-db
+      - /app/.storage/observations.sqlite
+
+networks:
+  ai: {}

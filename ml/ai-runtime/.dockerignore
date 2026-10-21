@@ -1,0 +1,12 @@
+.git
+.venv*
+.storage
+models
+data
+reports
+**/__pycache__
+**/*.pyc
+**/*.egg-info
+**/*.env
+**/.env*
+*.zip

@@ -1,0 +1,30 @@
+services:
+  snapshot-check:
+    image: resilience-alpha-ai:dev
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    network_mode: none
+    volumes:
+      - type: bind
+        source: ../data
+        target: /app/data
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../models
+        target: /app/models
+        read_only: true
+        bind:
+          create_host_path: false
+    command:
+      - python
+      - -m
+      - resilience_alpha_ai.anomaly_detection.runtime
+      - --snapshot
+      - data/raw/synthetic_loki_snapshot.json
+      - --window-end
+      - "2026-10-20T08:00:00Z"
+      - --model
+      - models/auth_isolation_forest_synthetic.joblib
