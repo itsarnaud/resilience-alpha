@@ -1,0 +1,70 @@
+# Standalone companion to the team's running dev + infra stacks.
+# Run with the SAME infra/compose/.env as docker-compose.dev.yml.
+name: resilience-ai-team-preview
+
+x-preview: &preview
+  image: resilience-alpha-ai:team-preview
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [backend, monitoring]
+  volumes:
+    - type: bind
+      source: ../models
+      target: /app/models
+      read_only: true
+      bind: {create_host_path: false}
+    - detector_storage:/app/.storage
+
+services:
+  ai-check:
+    <<: *preview
+    profiles: [checks]
+    environment:
+      AI_CHECK_AUTH_URL: http://auth:3000
+      AI_CHECK_DETECTOR_URL: http://detector:8000
+      AI_CHECK_ASSISTANT_URL: http://assistant:8000
+      AI_CHECK_REMEDIATION_URL: http://remediation:3000
+      AI_CHECK_CLIENT_SECRET: ${SVC_DASHBOARD_SECRET:-}
+      AI_CHECK_LOKI_URL: http://loki:3100
+      AI_CHECK_LOKI_QUERY: '{container="auth"}'
+    command: [python, -m, resilience_alpha_ai.anomaly_detection.team_check]
+
+  ai-preview:
+    <<: *preview
+    restart: unless-stopped
+    command:
+      - python
+      - -m
+      - resilience_alpha_ai.anomaly_detection.incident_worker
+      - --mode
+      - preview
+      - --loki-url
+      - http://loki:3100
+      - --query
+      - '{container="auth"}'
+      - --model
+      - /app/models/auth_isolation_forest_synthetic.joblib
+      - --threshold-config
+      - /app/models/auth_threshold_candidate.json
+      - --pipeline-db
+      - /app/.storage/team_incident_preview.sqlite
+      - --observation-db
+      - /app/.storage/observations.sqlite
+
+networks:
+  backend:
+    external: true
+    name: resilience-alpha_backend
+  monitoring:
+    external: true
+    name: resilience-alpha_monitoring
+
+volumes:
+  detector_storage:
+    external: true
+    name: resilience-alpha_ai_detector_storage
