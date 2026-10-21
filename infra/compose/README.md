@@ -10,13 +10,13 @@ La stack est découpée en **3 piles** (3 projets Docker Compose) qui tournent s
 | **Dev**   | `docker-compose.dev.yml`   | Applications Node.js et leurs bases PostgreSQL                                                 |
 | **Cyber** | `docker-compose.cyber.yml` | WAF (point d'entrée) et SIEM (Wazuh)                                                           |
 
-L'ancien fichier unique `docker-compose.yml` est conservé pour référence, mais ne doit pas être lancé en même temps que les 3 piles (mêmes noms de conteneurs et de ports).
 
 ## Prérequis
 
 - Docker Desktop (ou Docker Engine + Compose v2) démarré
 - Environ 4 Go de RAM libres pour l'ensemble de la stack
-- Ports libres sur la machine : `80`, `3000`, `9090`, `1514`, `1515`, `55000`
+- Ports libres sur la machine : `80`, `1883`, `3000`, `3001`, `3002`, `3010`, `5173`, `5174`, `5175`, `9090`, `1514`, `1515`, `55000` (`3000` est pris par Grafana : `auth` est donc publié sur `3010`, voir [le README principal](../../README.md#lancer-toute-la-plateforme-docker-compose))
+- `services/auth/keys/jwt.pem` généré une fois (voir le README principal, section « Lancer toute la plateforme »)
 
 ## Démarrage rapide
 
@@ -32,41 +32,32 @@ L'ancien fichier unique `docker-compose.yml` est conservé pour référence, mai
    docker compose -f docker-compose.cyber.yml up -d
    ```
    - **Infra en premier** : c'est elle qui crée les réseaux partagés `backend` et `monitoring`. Sans elle, les piles dev et cyber refusent de démarrer (réseau externe introuvable).
-   - **Dev avant cyber** : le WAF redirige vers `application`. Si elle n'existe pas encore, le WAF redémarre en boucle jusqu'à ce qu'elle soit lancée.
+   - **Dev avant cyber** : le WAF redirigera vers `front`/`dashboard`/`backoffice`, `auth`, `api` et `remediation`. S'ils n'existent pas encore, le WAF redémarre en boucle jusqu'à ce qu'ils soient lancés.
 3. Vérifier que tout tourne :
    ```bash
    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Label \"com.docker.compose.project\"}}"
    ```
 
-Le premier lancement télécharge les images (quelques minutes).
-
-### Migration depuis l'ancien `docker-compose.yml`
-
-Si l'ancienne stack tourne, l'arrêter d'abord (**sans** `-v`, pour garder les données) :
-
-```bash
-docker compose -f docker-compose.yml down
-```
-
-Les volumes des 3 piles portent les mêmes noms qu'avant (`resilience-alpha_*`) : bases, Grafana, Prometheus, Loki et Wazuh retrouvent leurs données.
+Le premier lancement télécharge et construit les images (quelques minutes). Détail des services Dev, des variables d'environnement et du premier démarrage (clé JWT, seed des comptes) : voir [le README principal](../../README.md#lancer-toute-la-plateforme-docker-compose).
 
 ## Services
 
-| Service                            | Pile  | Rôle                                                                        | Accès depuis la machine                                     |
-| ---------------------------------- | ----- | --------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `prometheus`                       | Infra | Collecte des métriques                                                      | http://localhost:9090                                       |
-| `node-exporter`                    | Infra | Métriques de la machine hôte                                                | interne                                                     |
-| `loki`                             | Infra | Stockage des logs                                                           | interne                                                     |
-| `promtail`                         | Infra | Envoie les logs des conteneurs (des 3 piles) vers Loki                      | interne                                                     |
-| `grafana`                          | Infra | Tableaux de bord (sources Prometheus et Loki préconfigurées)                | http://localhost:3000                                       |
-| `ansible`                          | Infra | Nœud de contrôle Ansible                                                    | `docker compose -f docker-compose.infra.yml exec ansible …` |
-| `application`                      | Dev   | Application principale (Node.js)                                            | via le WAF                                                  |
-| `auth`                             | Dev   | Service d'authentification (Node.js)                                        | interne                                                     |
-| `api-paiement`                     | Dev   | API de paiement (Node.js)                                                   | interne                                                     |
-| `remediation`                      | Dev   | Service de remédiation (Node.js)                                            | interne                                                     |
-| `db-app`, `db-auth`, `db-paiement` | Dev   | Une base PostgreSQL 16 par application                                      | interne                                                     |
-| `waf`                              | Cyber | Reverse proxy Nginx + ModSecurity (règles OWASP CRS), point d'entrée unique | http://localhost                                            |
-| `wazuh-manager`                    | Cyber | SIEM (manager seul, sans interface web)                                     | API : https://localhost:55000                               |
+| Service                                    | Pile  | Rôle                                                                        | Accès depuis la machine                                       |
+| ------------------------------------------- | ----- | --------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `prometheus`                               | Infra | Collecte des métriques                                                      | http://localhost:9090                                          |
+| `node-exporter`                            | Infra | Métriques de la machine hôte                                                | interne                                                        |
+| `loki`                                      | Infra | Stockage des logs                                                           | interne                                                        |
+| `promtail`                                 | Infra | Envoie les logs des conteneurs (des 3 piles) vers Loki                      | interne                                                        |
+| `grafana`                                  | Infra | Tableaux de bord (sources Prometheus et Loki préconfigurées)                | http://localhost:3000                                          |
+| `ansible`                                  | Infra | Nœud de contrôle Ansible                                                    | `docker compose -f docker-compose.infra.yml exec ansible …`   |
+| `mosquitto`                                | Infra | Broker MQTT (LED du back-office, voir `services/auth`)                     | `1883` (l'ESP8266 s'y connecte)                                |
+| `docker-socket-proxy`                      | Infra | Accès Docker filtré pour `remediation` (jamais le socket brut)             | interne                                                        |
+| `auth`, `api`, `remediation`               | Dev   | Les vrais services (`services/*`, TypeScript, Prisma)                      | `3010`, `3001`, `3002` (exposés tant que le WAF n'existe pas) |
+| `front`, `dashboard`, `backoffice`         | Dev   | Applications React compilées (nginx)                                       | `5173`, `5174`, `5175` — via le WAF à terme                   |
+| `face`                                     | Dev   | Reconnaissance faciale du back-office (IA, `ml/face`)                      | interne (appelé par `auth`)                                   |
+| `db-auth`, `db-paiement`, `db-remediation` | Dev   | Une base PostgreSQL 16 par service                                         | interne                                                        |
+| `waf`                                       | Cyber | Reverse proxy Nginx + ModSecurity (règles OWASP CRS), point d'entrée unique | http://localhost                                              |
+| `wazuh-manager`                            | Cyber | SIEM (manager seul, sans interface web)                                     | API : https://localhost:55000                                 |
 
 ## Réseaux
 
@@ -88,53 +79,42 @@ infra/
 ├── docker-compose.infra.yml   # pile Infra
 ├── docker-compose.dev.yml     # pile Dev
 ├── docker-compose.cyber.yml   # pile Cyber
-├── docker-compose.yml         # ancien fichier unique (référence)
-├── .env                       # à créer, ne pas partager
-├── apps/                      # code des applications Node.js (pile Dev)
-│   ├── application/
-│   ├── auth/
-│   ├── api-paiement/
-│   └── remediation/
+├── .env                       # à créer depuis .env.example, ne pas partager
+├── apps/                      # anciens prototypes Node CommonJS, remplacés par services/* (voir plus bas)
 ├── ansible/                   # pile Infra
 │   ├── Dockerfile             # image du nœud de contrôle
 │   └── playbooks/             # vos playbooks
 └── config/                    # pile Infra
+    ├── mosquitto/mosquitto.conf
     ├── prometheus/prometheus.yml
     ├── promtail/config.yml
     └── grafana/provisioning/datasources/datasources.yml
 ```
 
-## Ajouter le code d'une application Node.js
+## Le code des services Dev
 
-Chaque application utilise l'image `node:20-alpine` et monte son dossier `apps/<nom>` dans `/app`.
+Les anciens prototypes `apps/*` (Node CommonJS, montés à chaud dans `node:20-alpine`) ont été remplacés par les vraies images : chaque service (`auth`, `api`, `remediation`, `front`, `dashboard`, `backoffice`) a son propre `Dockerfile` dans `services/<nom>/`, buildé depuis la racine du dépôt (contexte `../..`, car c'est un monorepo npm workspaces). Le dossier `apps/*` ne sert donc plus qu'à titre d'archive.
 
-- Tant qu'il n'y a pas de `package.json`, le conteneur reste allumé et attend.
-- Dès qu'un `package.json` est présent, le conteneur lance `npm install` puis `npm start`.
-
-Contraintes pour le code :
-
-- Écouter sur le **port 3000** (fourni dans la variable `PORT`).
-- Se connecter à la base via la variable `DATABASE_URL` (déjà fournie à `application`, `auth` et `api-paiement`).
-- Pour joindre un autre service, utiliser son nom : `http://auth:3000`, `http://api-paiement:3000`…
-- Pour apparaître dans Prometheus, exposer une route `/metrics` (par exemple avec le paquet `prom-client`).
-
-Après avoir ajouté ou modifié le code :
+Pour modifier le code d'un service : voir son README (`services/<nom>/README.md`). Pour relancer sa version conteneurisée après une modification :
 
 ```bash
-docker compose -f docker-compose.dev.yml restart application
+docker compose -f docker-compose.dev.yml up -d --build <service>
 ```
 
 ## Variables d'environnement
 
-Le fichier `.env` (commun aux 3 piles) doit définir :
+Le fichier `.env` (commun aux 3 piles, voir [`.env.example`](.env.example)) doit définir :
 
-| Variable                                                       | Utilisée par                  | Pile  |
-| -------------------------------------------------------------- | ----------------------------- | ----- |
-| `DB_APP_USER`, `DB_APP_PASSWORD`, `DB_APP_NAME`                | `db-app`, `application`       | Dev   |
-| `DB_AUTH_USER`, `DB_AUTH_PASSWORD`, `DB_AUTH_NAME`             | `db-auth`, `auth`             | Dev   |
-| `DB_PAIEMENT_USER`, `DB_PAIEMENT_PASSWORD`, `DB_PAIEMENT_NAME` | `db-paiement`, `api-paiement` | Dev   |
-| `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`                 | `grafana`                     | Infra |
-| `WAZUH_API_USER`, `WAZUH_API_PASSWORD`                         | `wazuh-manager`               | Cyber |
+| Variable                                                                                  | Utilisée par                                 | Pile  |
+| ------------------------------------------------------------------------------------------ | ---------------------------------------------- | ----- |
+| `DB_AUTH_USER`, `DB_AUTH_PASSWORD`, `DB_AUTH_NAME`                                         | `db-auth`, `auth`                              | Dev   |
+| `DB_PAIEMENT_USER`, `DB_PAIEMENT_PASSWORD`, `DB_PAIEMENT_NAME`                             | `db-paiement`, `api`                           | Dev   |
+| `DB_REMEDIATION_USER`, `DB_REMEDIATION_PASSWORD`, `DB_REMEDIATION_NAME`                    | `db-remediation`, `remediation`                | Dev   |
+| `SEED_OPERATOR_EMAIL/PASSWORD`, `SEED_ADMIN_EMAIL/PASSWORD`, `SEED_VICTIM_EMAIL/PASSWORD`  | comptes de démonstration (`auth`)              | Dev   |
+| `SVC_DETECTOR_SECRET`, `SVC_DASHBOARD_SECRET`, `SVC_REMEDIATION_SECRET`                    | comptes de service (`auth`, `remediation`)     | Dev   |
+| `MQTT_AUTH_USERNAME`, `MQTT_AUTH_PASSWORD`                                                 | `auth` sur le broker `mosquitto`               | Dev   |
+| `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`                                             | `grafana`                                      | Infra |
+| `WAZUH_API_USER`, `WAZUH_API_PASSWORD`                                                     | `wazuh-manager`                                | Cyber |
 
 Le mot de passe Wazuh doit être fort : au moins 8 caractères, avec majuscule, minuscule, chiffre et symbole.
 
@@ -170,15 +150,13 @@ Ajouter `-v` à chaque `down` pour supprimer **aussi** les données de la pile c
 
 ## Comportements normaux à connaître
 
-- **Erreur 502 sur http://localhost** : aucune application ne tourne encore derrière le WAF.
-- **Le WAF redémarre en boucle** : la pile dev n'est pas lancée (`application` introuvable). Il repart seul une fois la pile dev démarrée.
+- **Erreur 502 sur http://localhost** : le WAF n'a pas encore de route vers les services dev (pile cyber pas encore branchée dessus — voir le README principal).
 - **`network resilience-alpha_backend not found`** au lancement de dev ou cyber : la pile infra n'est pas lancée.
-- **Applications « down » dans Prometheus** : elles n'exposent pas encore `/metrics`.
+- **Services « down » dans Prometheus** : ils n'exposent pas encore `/metrics`, ou ne sont pas démarrés.
 - **Erreurs `wazuh.indexer` dans les logs de Wazuh** : seul le manager est installé, pas l'indexer. Le manager fonctionne quand même.
-- **Le WAF ne redirige que vers `application`** : pour exposer d'autres services, il faudra une configuration Nginx avec des routes.
+- **Conflit de port ou de nom de conteneur au démarrage** : un autre projet Docker Compose sur la machine (TP, essai précédent) utilise déjà ce nom ou ce port — voir le README principal, section « Si un port ou un nom de conteneur est déjà pris ».
 
 ## Partager ce dossier
 
 - Ne pas inclure le fichier `.env` (il contient les mots de passe).
-- Ne pas inclure les dossiers `apps/*/node_modules`.
-- Les données (bases, Grafana, Wazuh) sont stockées dans des volumes Docker, pas dans ce dossier : elles ne partent donc pas avec.
+- Les données (bases, Grafana, Wazuh, visages enrôlés) sont stockées dans des volumes Docker, pas dans ce dossier : elles ne partent donc pas avec.

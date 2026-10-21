@@ -1,110 +1,165 @@
-# PROJECT RESILIENCE-ALPHA : pile DEV (applications Node.js + bases PostgreSQL)
-# Lancement : docker compose -f docker-compose.dev.yml up -d
-# Prérequis : la pile infra doit être lancée (elle crée les réseaux backend et monitoring).
+# PROJECT RESILIENCE-ALPHA : pile DEV
 
 name: resilience-alpha-dev
 
-# Base commune aux 4 applications Node.js :
-# chaque service monte son dossier apps/<nom> dans /app.
-# Si le dossier contient un package.json -> npm install puis npm start.
-# Sinon le conteneur reste allumé en attendant le code.
-x-node-app: &node-app
-  image: node:20-alpine
-  working_dir: /app
+x-node-service: &node-service
+  build:
+    context: ../..
   restart: unless-stopped
-  command: >
-    sh -c "if [ -f package.json ]; then npm install && npm start;
-           else echo 'Pas de package.json dans /app : en attente du code'; tail -f /dev/null; fi"
   labels:
     logging: promtail
-  networks: [backend]
+  networks: [backend, data]
 
 services:
-  # ---------- Applications Node.js ----------
-  application:
-    <<: *node-app
-    container_name: application
-    volumes: [./apps/application:/app]
-    environment:
-      PORT: '3000'
-      DATABASE_URL: postgres://${DB_APP_USER}:${DB_APP_PASSWORD}@db-app:5432/${DB_APP_NAME}
-      AUTH_URL: http://auth:3000
-      PAIEMENT_URL: http://api-paiement:3000
-    depends_on:
-      db-app: { condition: service_healthy }
-    networks: [backend, data]
-
   auth:
-    <<: *node-app
+    <<: *node-service
+    build:
+      context: ../..
+      dockerfile: services/auth/Dockerfile
     container_name: auth
-    volumes: [./apps/auth:/app]
+    ports: ['3010:3000'] # exposé tant que le WAF n'est pas branché
+    volumes:
+      - ../../services/auth/keys:/repo/services/auth/keys:ro
     environment:
+      NODE_ENV: production
       PORT: '3000'
-      DATABASE_URL: postgres://${DB_AUTH_USER}:${DB_AUTH_PASSWORD}@db-auth:5432/${DB_AUTH_NAME}
-      FACE_URL: http://face:5000
+      DATABASE_URL: postgresql://${DB_AUTH_USER}:${DB_AUTH_PASSWORD}@db-auth:5432/${DB_AUTH_NAME}
+      JWT_PRIVATE_KEY_FILE: /repo/services/auth/keys/jwt.pem
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      ACCESS_TOKEN_TTL_SECONDS: '900'
+      BCRYPT_ROUNDS: '10'
+      TRUST_PROXY: loopback,uniquelocal
+      SEED_OPERATOR_EMAIL: ${SEED_OPERATOR_EMAIL}
+      SEED_OPERATOR_PASSWORD: ${SEED_OPERATOR_PASSWORD}
+      SEED_VICTIM_EMAIL: ${SEED_VICTIM_EMAIL}
+      SEED_VICTIM_PASSWORD: ${SEED_VICTIM_PASSWORD}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      SEED_SVC_DETECTOR_SECRET: ${SVC_DETECTOR_SECRET}
+      SEED_SVC_DASHBOARD_SECRET: ${SVC_DASHBOARD_SECRET}
+      SEED_SVC_REMEDIATION_SECRET: ${SVC_REMEDIATION_SECRET}
+      FACE_VERIFIER: http
+      FACE_SERVICE_URL: http://face:5000
+      FACE_MIN_DELAY_MS: '400'
+      BACKOFFICE_MAX_FAILURES: '2'
+      BACKOFFICE_LOCK_SECONDS: '300'
+      BACKOFFICE_LOCK_MAX_SECONDS: '3600'
+      FACE_REFUSED_COOLDOWN_SECONDS: '30'
+      PASSWORD_REFUSED_COOLDOWN_SECONDS: '6'
+      BACKOFFICE_SESSION_TTL_SECONDS: '120'
       MQTT_URL: mqtt://mosquitto:1883
-      LED_TOPIC: resilience/led
+      MQTT_USERNAME: ${MQTT_AUTH_USERNAME}
+      MQTT_PASSWORD: ${MQTT_AUTH_PASSWORD}
+      MQTT_LED_TOPIC: resilience/led
+      LED_GREEN_SOLID_SECONDS: '30'
+      LED_RED_SOLID_SECONDS: '30'
+      LED_RED_BLINK_SECONDS: '6'
     depends_on:
       db-auth: { condition: service_healthy }
-    networks: [backend, data]
+      face: { condition: service_started }
 
-  api-paiement:
-    <<: *node-app
-    container_name: api-paiement
-    volumes: [./apps/api-paiement:/app]
+  api:
+    <<: *node-service
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile
+    container_name: api
+    ports: ['3001:3000'] # exposé tant que le WAF n'est pas branché (tests via Vite en dev)
     environment:
+      NODE_ENV: production
       PORT: '3000'
-      DATABASE_URL: postgres://${DB_PAIEMENT_USER}:${DB_PAIEMENT_PASSWORD}@db-paiement:5432/${DB_PAIEMENT_NAME}
+      DATABASE_URL: postgresql://${DB_PAIEMENT_USER}:${DB_PAIEMENT_PASSWORD}@db-paiement:5432/${DB_PAIEMENT_NAME}
+      AUTH_JWKS_URL: http://auth:3000/.well-known/jwks.json
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      EXTERNAL_TRANSFER_LIMIT_CENTS: '50000'
+      INITIAL_BALANCE_CENTS: '100000'
+      MAX_ACCOUNTS_PER_USER: '5'
+      TRUST_PROXY: loopback,uniquelocal
     depends_on:
       db-paiement: { condition: service_healthy }
-    networks: [backend, data]
+      auth: { condition: service_healthy }
 
-  # Joint Prometheus (pile infra) et Wazuh (pile cyber) via le réseau partagé monitoring
   remediation:
-    <<: *node-app
+    <<: *node-service
+    build:
+      context: ../..
+      dockerfile: services/remediation/Dockerfile
     container_name: remediation
-    volumes: [./apps/remediation:/app]
+    ports: ['3002:3000'] # exposé tant que le WAF n'est pas branché (tests via Vite en dev)
     environment:
+      NODE_ENV: production
       PORT: '3000'
-      PROMETHEUS_URL: http://prometheus:9090
-      WAZUH_API_URL: https://wazuh-manager:55000
-      SOCKET_PROXY_HOST: docker-socket-proxy
-      SOCKET_PROXY_PORT: "2375"
-      TARGET_CONTAINER: api-paiement
-      TARGET_URL: http://api-paiement:3000
-      POLL_MS: "5000"
-      REMEDIATION_MODE: ansible          # "ansible" (playbook) ou "docker" (restart direct)
-      ANSIBLE_CONTAINER: ansible
-      ANSIBLE_PLAYBOOK: playbooks/remediation.yml
-    networks: [backend, monitoring, remediation]
+      DATABASE_URL: postgresql://${DB_REMEDIATION_USER}:${DB_REMEDIATION_PASSWORD}@db-remediation:5432/${DB_REMEDIATION_NAME}
+      AUTH_JWKS_URL: http://auth:3000/.well-known/jwks.json
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+      AUTH_URL: http://auth:3000
+      API_URL: http://api:3000
+      REMEDIATION_CLIENT_ID: svc-remediation
+      REMEDIATION_CLIENT_SECRET: ${SVC_REMEDIATION_SECRET}
+      SUPERVISED_SERVICES: auth=http://auth:3000,api=http://api:3000
+      WAF_DENYLIST_FILE: /waf/denylist.conf
+      BLOCK_DURATION_SECONDS: '300'
+      PROTECTED_IPS: 127.0.0.1,::1,192.168.137.1
+      MIN_SCORE: '0.6'
+      MIN_FAILURES: '5'
+      DEDUP_COOLDOWN_SECONDS: '60'
+      VERIFY_ATTEMPTS: '5'
+      VERIFY_INTERVAL_MS: '2000'
+      HTTP_TIMEOUT_MS: '3000'
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      ALLOWED_CONTAINERS: api
+      TRUST_PROXY: loopback,uniquelocal
+    volumes:
+      - waf_denylist:/waf
+    depends_on:
+      db-remediation: { condition: service_healthy }
+      auth: { condition: service_healthy }
+      api: { condition: service_healthy }
+    networks: [backend, data, monitoring, remediation]
 
   # ---------- IA : reconnaissance faciale (MFA back-office) ----------
   face:
-    build: ../../ml/face # service de l'IA, rangé avec les autres composants ML
+    build: ../../ml/face
     container_name: face
     restart: unless-stopped
     environment:
-      FACE_THRESHOLD: "0.6"
+      FACE_THRESHOLD: '0.6'
     volumes:
       - face_data:/data
     networks: [backend, monitoring]
 
-  # ---------- Bases de données PostgreSQL ----------
-  db-app:
-    image: postgres:16-alpine
-    container_name: db-app
+  # ---------- Applications statiques (nginx) : attendent le WAF pour /auth/*, /api/*, /remediation/* ----------
+  front:
+    build:
+      context: ../..
+      dockerfile: services/front/Dockerfile
+    container_name: front
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${DB_APP_USER}
-      POSTGRES_PASSWORD: ${DB_APP_PASSWORD}
-      POSTGRES_DB: ${DB_APP_NAME}
-    volumes: [db_app_data:/var/lib/postgresql/data]
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
-      interval: 10s
-      retries: 5
-    networks: [data]
+    ports: ['5173:8080'] # accès direct hors-WAF, pour vérifier que la page se charge
+    networks: [backend]
 
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: services/dashboard/Dockerfile
+    container_name: dashboard
+    restart: unless-stopped
+    ports: ['5174:8080']
+    networks: [backend]
+
+  backoffice:
+    build:
+      context: ../..
+      dockerfile: services/backoffice/Dockerfile
+    container_name: backoffice
+    restart: unless-stopped
+    ports: ['5175:8080']
+    networks: [backend]
+
+  # ---------- Bases de données PostgreSQL (une par service) ----------
   db-auth:
     image: postgres:16-alpine
     container_name: db-auth
@@ -135,8 +190,23 @@ services:
       retries: 5
     networks: [data]
 
+  db-remediation:
+    image: postgres:16-alpine
+    container_name: db-remediation
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_REMEDIATION_USER}
+      POSTGRES_PASSWORD: ${DB_REMEDIATION_PASSWORD}
+      POSTGRES_DB: ${DB_REMEDIATION_NAME}
+    volumes: [db_remediation_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      retries: 5
+    networks: [data]
+
 networks:
-  backend: # applications entre elles (créé par la pile infra)
+  backend: # applications entre elles + mosquitto (créé par la pile infra)
     name: resilience-alpha_backend
     external: true
   monitoring: # Prometheus, Loki, Grafana, Wazuh (créé par la pile infra)
@@ -144,17 +214,18 @@ networks:
     external: true
   data: # applications <-> bases de données (propre à cette pile)
     name: resilience-alpha_data
-  remediation: # moteur de remédiation <-> socket-proxy (créé par la pile infra)
+  remediation: # remediation <-> docker-socket-proxy (créé par la pile infra)
     name: resilience-alpha_remediation
     external: true
 
-# Noms fixes = mêmes volumes que l'ancien docker-compose.yml (données conservées)
 volumes:
   face_data:
     name: resilience-alpha_face_data
-  db_app_data:
-    name: resilience-alpha_db_app_data
+  waf_denylist: # partagée avec le WAF de la pile cyber une fois branchée (volume externe à confirmer)
+    name: resilience-alpha_waf_denylist
   db_auth_data:
     name: resilience-alpha_db_auth_data
   db_paiement_data:
     name: resilience-alpha_db_paiement_data
+  db_remediation_data:
+    name: resilience-alpha_db_remediation_data
