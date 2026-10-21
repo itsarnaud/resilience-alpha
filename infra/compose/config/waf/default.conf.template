@@ -51,6 +51,21 @@ server {
         include includes/proxy_common.conf;
     }
 
+    # --- Services IA, specifiques au dashboard (prefixe CONSERVE : pas de rewrite) ---
+    # detector et assistant servent deja leurs routes avec le prefixe
+    # (/detector/v1/..., /assistant/v1/...), donc proxy_pass simple.
+    location /detector/ {
+        set $svc detector;
+        proxy_pass http://$svc:8000;
+        include includes/proxy_common.conf;
+    }
+
+    location /assistant/ {
+        set $svc assistant;
+        proxy_pass http://$svc:8000;
+        include includes/proxy_common.conf;
+    }
+
     include includes/waf_api_routes.conf;
     include includes/location_common.conf;
 }
