@@ -90,7 +90,7 @@ Changer le schéma : modifier `prisma/schema.prisma`, puis `npx prisma migrate d
 
 ## Tests
 
-Les tests d'intégration ont besoin de `remediation_test` migrée et de `TEST_DATABASE_URL` dans `.env`. Sans cette variable, ils sont ignorés. Avec elle, ils échouent si la base n'est pas démarrée : lancer `npm run db:up` avant `npm test` (et avant un `git push`, car le hook `pre-push` lance les tests).
+Les tests d'intégration ont besoin de `remediation_test` migrée et de `TEST_DATABASE_URL` dans `.env`. Sans cette variable, ils sont ignorés. Avec elle, ils échouent si la base n'est pas démarrée : lancer `npm run db:up` avant `npm test` (et avant un `git push`, par convention — aucun hook ne les lance automatiquement).
 
 `auth` et `api` sont simulés par un petit serveur HTTP, ce qui permet de provoquer des pannes précises (transaction de test qui échoue N fois, service qui ne répond plus). La liste de blocage est un vrai fichier ; Docker est simulé.
 
@@ -104,10 +104,11 @@ docker build -f services/remediation/Dockerfile -t resilience-remediation .
 
 Le dossier `/waf` est un volume : il doit être monté **à la fois** sur la remédiation (écriture) et sur le WAF (lecture), à `WAF_DENYLIST_FILE`.
 
+**Via Docker Compose** (toute la plateforme, pas seulement `remediation`) : voir la section [« Lancer toute la plateforme »](../../README.md#lancer-toute-la-plateforme-docker-compose) du README principal. `DOCKER_HOST` y pointe déjà vers `docker-socket-proxy` (pile infra) et le volume `/waf` est créé (`resilience-alpha_waf_denylist`) : il ne reste que le WAF lui-même (pile cyber) à brancher dessus pour qu'un blocage soit réellement appliqué.
+
 ## Ce qui reste à confirmer avec les autres équipes
 
-- **Cyber :** le WAF doit lire `WAF_DENYLIST_FILE` (dans la version actuelle : des lignes `deny <ip>;` à inclure dans la configuration nginx) et se recharger quand il change. Soit via `WAF_RELOAD_CONTAINER` (signal `HUP` envoyé par le proxy Docker), soit par un mécanisme de surveillance côté WAF. Le format est dans `lib/waf.ts`.
-- **Infra :** le proxy Docker filtré (`DOCKER_HOST`) n'est pas encore dans le compose. Il doit autoriser le redémarrage et le signal sur les conteneurs de `ALLOWED_CONTAINERS`, et rien d'autre.
+- **Cyber :** le WAF doit lire `WAF_DENYLIST_FILE` (dans la version actuelle : des lignes `deny <ip>;` à inclure dans la configuration nginx), monter le même volume (`resilience-alpha_waf_denylist`) et se recharger quand il change. Soit via `WAF_RELOAD_CONTAINER` (signal `HUP` envoyé par le proxy Docker), soit par un mécanisme de surveillance côté WAF. Le format est dans `lib/waf.ts`.
 - **IA :** le détecteur envoie `POST /v1/incidents` avec un jeton `svc:detector` (client `svc-detector` d'`auth`). Champs : voir le contrat.
 
 ## Limites assumées

@@ -71,6 +71,10 @@ docker run -p 8080:8080 resilience-backoffice
 
 **À prévoir côté WAF :** router vers ce conteneur, et `/auth/*` vers `auth`, préfixe retiré.
 
+## Avec Docker Compose (toute la plateforme)
+
+Le conteneur `backoffice` de [`infra/compose/docker-compose.dev.yml`](../../infra/compose/docker-compose.dev.yml) tourne (voir la section [« Lancer toute la plateforme »](../../README.md#lancer-toute-la-plateforme-docker-compose) du README principal), mais tant que le WAF (pile cyber) n'est pas branché, ses appels `/auth` échouent — c'est attendu. Pour tester quand même, `auth` est publié sur l'hôte (`3010`) : `AUTH_URL=http://localhost:3010 npm run dev -w services/backoffice` fonctionne contre le vrai conteneur (si le port `5175` est déjà pris par le conteneur `backoffice`, Vite bascule automatiquement sur `5176`).
+
 ## Limites assumées
 
 - La reconnaissance faciale dépend entièrement du service `ml/face` (IA) : pas d'authentification sur ses routes à ce jour, à corriger avant la démo (voir `ml/face/README.md`).

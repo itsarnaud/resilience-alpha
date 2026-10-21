@@ -164,7 +164,7 @@ docker exec <conteneur> node dist/scripts/seed.js   # dans l'image
 
 ## Tests
 
-Les tests d'intégration ont besoin de la base `auth_test` migrée (voir plus haut) et de `TEST_DATABASE_URL` dans `.env`. Sans cette variable, ils sont ignorés. Avec elle, ils échouent si la base n'est pas démarrée : lancer `npm run db:up` avant `npm test` (et avant un `git push`, car le hook `pre-push` lance les tests).
+Les tests d'intégration ont besoin de la base `auth_test` migrée (voir plus haut) et de `TEST_DATABASE_URL` dans `.env`. Sans cette variable, ils sont ignorés. Avec elle, ils échouent si la base n'est pas démarrée : lancer `npm run db:up` avant `npm test` (et avant un `git push`, par convention — aucun hook ne les lance automatiquement).
 
 ```bash
 npm run db:up
@@ -180,6 +180,8 @@ docker build -f services/auth/Dockerfile -t resilience-auth .
 ```
 
 L'image applique les migrations au démarrage puis lance le service. Elle a un `HEALTHCHECK` sur `/healthz`.
+
+**Via Docker Compose** (toute la plateforme, pas seulement `auth`) : voir la section [« Lancer toute la plateforme »](../../README.md#lancer-toute-la-plateforme-docker-compose) du README principal. `JWT_PRIVATE_KEY_FILE` y est monté depuis `services/auth/keys/jwt.pem` (à générer une fois, voir plus haut) ; `FACE_VERIFIER=http` y est obligatoire (le conteneur refuse de démarrer sinon, `NODE_ENV=production`).
 
 ## Choix de sécurité à connaître
 

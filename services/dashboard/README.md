@@ -60,6 +60,10 @@ docker run -p 8080:8080 resilience-dashboard
 
 **À prévoir côté WAF :** router `/` vers ce conteneur, `/remediation/*` vers la remédiation et `/auth/*` vers `auth`, préfixe retiré. Sans cela la page s'affiche mais rien ne se charge.
 
+## Avec Docker Compose (toute la plateforme)
+
+Le conteneur `dashboard` de [`infra/compose/docker-compose.dev.yml`](../../infra/compose/docker-compose.dev.yml) tourne (voir la section [« Lancer toute la plateforme »](../../README.md#lancer-toute-la-plateforme-docker-compose) du README principal), mais tant que le WAF (pile cyber) n'est pas branché, ses appels `/auth` et `/remediation` échouent — c'est attendu. Pour tester quand même, `auth` et `remediation` sont publiés sur l'hôte (`3010` et `3002`) : `AUTH_URL=http://localhost:3010 REMEDIATION_URL=http://localhost:3002 npm run dev -w services/dashboard` fonctionne contre les vrais conteneurs.
+
 ## Vérifié en conditions réelles
 
 Testé dans un vrai navigateur avec `auth`, `api` et `remediation` : connexion opérateur, un incident envoyé par un vrai jeton `svc:detector` apparaît sur la page Incidents sans recharger la page, sa chronologie complète (réception, validation de l'IP, blocage, vérification, transaction de test) s'affiche sur sa fiche, et il figure dans les IP bloquées.

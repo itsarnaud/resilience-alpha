@@ -76,7 +76,7 @@ Changer le schéma : modifier `prisma/schema.prisma`, puis `npx prisma migrate d
 
 ## Tests
 
-Les tests d'intégration ont besoin de la base `payments_test` migrée (voir plus haut) et de `TEST_DATABASE_URL` dans `.env`. Sans cette variable, ils sont ignorés. Avec elle, ils échouent si la base n'est pas démarrée : lancer `npm run db:up` avant `npm test` (et avant un `git push`, car le hook `pre-push` lance les tests).
+Les tests d'intégration ont besoin de la base `payments_test` migrée (voir plus haut) et de `TEST_DATABASE_URL` dans `.env`. Sans cette variable, ils sont ignorés. Avec elle, ils échouent si la base n'est pas démarrée : lancer `npm run db:up` avant `npm test` (et avant un `git push`, par convention — aucun hook ne les lance automatiquement).
 
 Ils vérifient notamment : l'atomicité des virements simultanés, l'idempotence (y compris concurrente), l'isolation entre clients, la règle anti-fraude (refus, journal, compteur, IP réelle), et les restrictions du canari. Un serveur JWKS local sert les clés de test, ce qui exerce la vraie vérification de jeton.
 
@@ -89,6 +89,8 @@ docker build -f services/api/Dockerfile -t resilience-api .
 ```
 
 L'image applique les migrations au démarrage puis lance le service. Elle a un `HEALTHCHECK` sur `/healthz`. Le seed des comptes canari se lance dans le conteneur : `docker exec <conteneur> node dist/scripts/seed.js`.
+
+**Via Docker Compose** (toute la plateforme, pas seulement `api`) : voir la section [« Lancer toute la plateforme »](../../README.md#lancer-toute-la-plateforme-docker-compose) du README principal.
 
 ## Limites assumées
 
