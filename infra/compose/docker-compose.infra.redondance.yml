@@ -1,0 +1,29 @@
+# PROJECT RESILIENCE-ALPHA : redondance de la pile INFRA
+# Fichier à superposer à docker-compose.infra.yml (il ne le remplace pas) :
+#   docker compose -f docker-compose.infra.yml -f docker-compose.infra.redondance.yml up -d
+# Détail et procédures : README-redondance.md
+
+services:
+  # Accès Docker réservé au playbook de bascule des bases (ansible/playbooks/bascule-db.yml).
+  # Séparé du docker-socket-proxy de la remédiation : la bascule a besoin de gérer les réseaux
+  # (déplacer le nom "db-xxx" vers la réplique), droit qu'on ne donne pas à la remédiation.
+  docker-socket-proxy-ha:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: docker-socket-proxy-ha
+    restart: unless-stopped
+    environment:
+      CONTAINERS: '1'
+      POST: '1'
+      EXEC: '1'
+      NETWORKS: '1'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [ha]
+
+  # Ansible rejoint en plus le réseau "ha" pour joindre ce proxy.
+  ansible:
+    networks: [ha]
+
+networks:
+  ha: # ansible <-> docker-socket-proxy-ha (isolé)
+    name: resilience-alpha_ha
