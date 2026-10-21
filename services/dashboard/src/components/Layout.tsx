@@ -6,6 +6,7 @@ const links = [
   { to: '/', label: "Vue d'ensemble", end: true },
   { to: '/incidents', label: 'Incidents' },
   { to: '/blocages', label: 'IP bloquées' },
+  { to: '/assistant', label: 'Assistant' },
 ];
 
 export default function Layout() {

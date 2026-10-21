@@ -334,3 +334,36 @@ describe('IP bloquées', () => {
     expect(await screen.findByText('Aucune IP bloquée actuellement.')).toBeInTheDocument();
   });
 });
+
+// --- Assistant -------------------------------------------------------------------------------
+
+describe('assistant', () => {
+  beforeEach(() => session.set(operatorToken()));
+
+  it('affiche la réponse et les sources', async () => {
+    const fetch = mockFetch({
+      'POST /assistant/v1/chat': json({
+        answer: "Le WAF retire le préfixe avant de transmettre à l'service visé.",
+        sources: [{ file: 'docs/architecture.md', excerpt: 'routage par préfixe', page: null }],
+      }),
+    });
+    renderApp('/assistant');
+    await userEvent.type(screen.getByLabelText('Question'), 'Comment le WAF route les requêtes ?');
+    await userEvent.click(screen.getByRole('button', { name: 'Demander' }));
+    expect(await screen.findByText(/retire le préfixe/)).toBeInTheDocument();
+    expect(screen.getByText('docs/architecture.md')).toBeInTheDocument();
+    const call = fetch.mock.calls[0];
+    expect(call).toBeDefined();
+    expect(JSON.parse(call![1]!.body as string)).toEqual({
+      question: 'Comment le WAF route les requêtes ?',
+    });
+  });
+
+  it('affiche l’erreur sans planter la page', async () => {
+    mockFetch({ 'POST /assistant/v1/chat': json({ title: 'Service injoignable' }, 503) });
+    renderApp('/assistant');
+    await userEvent.type(screen.getByLabelText('Question'), 'test');
+    await userEvent.click(screen.getByRole('button', { name: 'Demander' }));
+    expect(await screen.findByText('Service injoignable')).toBeInTheDocument();
+  });
+});

@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router';
 import Layout from './components/Layout';
 import Protected from './components/Protected';
+import AssistantPage from './pages/AssistantPage';
 import BlocksPage from './pages/BlocksPage';
 import IncidentDetailPage from './pages/IncidentDetailPage';
 import IncidentsPage from './pages/IncidentsPage';
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="incidents" element={<IncidentsPage />} />
           <Route path="incidents/:id" element={<IncidentDetailPage />} />
           <Route path="blocages" element={<BlocksPage />} />
+          <Route path="assistant" element={<AssistantPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

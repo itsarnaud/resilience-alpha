@@ -74,8 +74,13 @@ interface Options {
   auth?: boolean;
 }
 
-// Le WAF aiguille `/auth/*` vers auth et `/remediation/*` vers la remédiation, en retirant le préfixe.
-async function request<T>(base: '/auth' | '/remediation', path: string, options: Options = {}): Promise<T> {
+// Le WAF aiguille `/auth/*` vers auth, `/remediation/*` vers la remédiation et `/assistant/*` vers
+// l'assistant RAG (IA), en retirant le préfixe.
+async function request<T>(
+  base: '/auth' | '/remediation' | '/assistant',
+  path: string,
+  options: Options = {},
+): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   const authenticated = options.auth !== false;
@@ -115,4 +120,20 @@ export const remediationApi = {
   services: () => request<ServiceStatus[]>('/remediation', '/v1/services'),
   blocks: () => request<IpBlock[]>('/remediation', '/v1/blocks'),
   playbooks: () => request<Playbook[]>('/remediation', '/v1/playbooks'),
+};
+
+export interface AssistantSource {
+  file: string;
+  excerpt: string;
+  page: number | null;
+}
+
+export interface AssistantAnswer {
+  answer: string;
+  sources: AssistantSource[];
+}
+
+export const assistantApi = {
+  chat: (question: string) =>
+    request<AssistantAnswer>('/assistant', '/v1/chat', { method: 'POST', body: { question } }),
 };
