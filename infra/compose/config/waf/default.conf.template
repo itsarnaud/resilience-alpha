@@ -1,0 +1,72 @@
+# ============================================================================
+#  WAF Resilience-Alpha — reverse proxy ModSecurity, routage par prefixe
+#
+#  ModSecurity reste actif GLOBALEMENT via conf.d/modsecurity.conf de l'image
+#  (non modifie). Ce fichier ne gere QUE le routage, rien d'autre.
+#
+#  Les 3 fronts React sont compiles pour la racine "/" (assets en /assets/,
+#  appels /auth /api /remediation en chemins absolus). On ne peut donc pas les
+#  servir sous un sous-chemin sans les rebuilder : chacun a son port dedie, et
+#  ils partagent les memes routes API :
+#
+#    :8080 -> localhost        front       (banque client)
+#    :8081 -> localhost:8081   dashboard   (supervision / remediation)
+#    :8082 -> localhost:8082   backoffice  (admin + MFA faciale)
+#
+#    /auth/*        -> auth:3000         (prefixe retire)
+#    /api/*         -> api:3000          (prefixe retire)
+#    /remediation/* -> remediation:3000  (prefixe retire)
+#    / (le reste)   -> front|dashboard|backoffice:8080  selon le port
+#
+#  Les hotes amont sont resolus a chaud (resolver Docker, defini par l'image) :
+#  si un service est momentanement down, seule SA route renvoie 502 — le WAF ne
+#  redemarre pas en boucle.
+# ============================================================================
+
+# --- Front : banque client -> http://localhost/ ---
+server {
+    listen 8080 default_server;
+    server_name _;
+    client_max_body_size 12m;
+
+    location / {
+        set $app front;
+        proxy_pass http://$app:8080;
+        include includes/proxy_common.conf;
+    }
+
+    include includes/waf_api_routes.conf;
+    include includes/location_common.conf;
+}
+
+# --- Dashboard : supervision / remediation -> http://localhost:8081/ ---
+server {
+    listen 8081;
+    server_name _;
+    client_max_body_size 12m;
+
+    location / {
+        set $app dashboard;
+        proxy_pass http://$app:8080;
+        include includes/proxy_common.conf;
+    }
+
+    include includes/waf_api_routes.conf;
+    include includes/location_common.conf;
+}
+
+# --- Back-office : admin + MFA faciale -> http://localhost:8082/ ---
+server {
+    listen 8082;
+    server_name _;
+    client_max_body_size 12m;
+
+    location / {
+        set $app backoffice;
+        proxy_pass http://$app:8080;
+        include includes/proxy_common.conf;
+    }
+
+    include includes/waf_api_routes.conf;
+    include includes/location_common.conf;
+}

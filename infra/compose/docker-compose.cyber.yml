@@ -21,15 +21,30 @@ services:
     container_name: waf
     restart: unless-stopped
     environment:
-      BACKEND: http://application:3000
-      PORT: '8080'
       MODSEC_RULE_ENGINE: 'On'
       PARANOIA: '1'
-      MODSEC_REQ_BODY_NO_FILES_LIMIT: '10485760'
+      # Les images faciales du back-office (base64 JSON) depassent la limite
+      # "no files" par defaut (128 Ko). Nom EXACT de la variable de l'image :
+      MODSEC_REQ_BODY_NOFILES_LIMIT: '10485760'
     ports:
-      - '80:8080'
+      - '80:8080'     # front      -> banque client
+      - '8081:8081'   # dashboard  -> supervision / remediation
+      - '8082:8082'   # backoffice -> admin + MFA faciale
     volumes:
+      # Routage par prefixe (remplace le routage mono-backend de l'image).
+      - ./config/waf/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
+      - ./config/waf/waf_api_routes.conf.template:/etc/nginx/templates/includes/waf_api_routes.conf.template:ro
+      - ./config/waf/proxy_common.conf.template:/etc/nginx/templates/includes/proxy_common.conf.template:ro
+      # Exclusion CRS ciblee (etape /face du login back-office).
       - ./config/waf/custom-before.conf:/etc/modsecurity.d/plugins/custom-before.conf:ro
+    # L'image sonde https://localhost:8443/healthz par defaut ; on a retire le bloc SSL,
+    # donc on sonde le /healthz HTTP sur le port front (8080).
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     labels:
       logging: promtail
     networks: [backend, cyber]

@@ -1,0 +1,25 @@
+# Routes API communes aux 3 fronts. Le prefixe (/auth, /api, /remediation) est
+# retire avant transmission. L'hote est resolu a chaud (variable dans proxy_pass)
+# pour que le WAF demarre meme si un service n'est pas encore up.
+# NB : ModSecurity inspecte l'URL d'ORIGINE (avec prefixe), avant ce rewrite.
+
+location /auth/ {
+    set $svc auth;
+    rewrite ^/auth/(.*)$ /$1 break;
+    proxy_pass http://$svc:3000;
+    include includes/proxy_common.conf;
+}
+
+location /api/ {
+    set $svc api;
+    rewrite ^/api/(.*)$ /$1 break;
+    proxy_pass http://$svc:3000;
+    include includes/proxy_common.conf;
+}
+
+location /remediation/ {
+    set $svc remediation;
+    rewrite ^/remediation/(.*)$ /$1 break;
+    proxy_pass http://$svc:3000;
+    include includes/proxy_common.conf;
+}
