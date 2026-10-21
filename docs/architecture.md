@@ -45,8 +45,6 @@ flowchart TB
     face["reconnaissance faciale<br/>(IA)"]
     obs["Prometheus, Loki, Grafana<br/>(infra)"]
     ml["détecteur ML<br/>(IA)"]
-    siem["SIEM Wazuh<br/>(cyber)"]
-    notif["Notifications<br/>mail, bot Discord"]
     secrets["Secrets<br/>(cyber, à définir)"]
     docker["proxy Docker<br/>(infra, à ajouter)"]
   end
@@ -77,9 +75,6 @@ flowchart TB
   api -. "métriques et logs" .-> obs
   waf -. "logs" .-> obs
   obs --> ml
-  obs --> siem
-  waf -- "accès à l'interface" --> siem
-  siem --> notif
   secrets -. "injectés au déploiement" .-> dev
   ml -- "POST /v1/incidents" --> rem
   rem -- "bloque une IP" --> waf
@@ -93,8 +88,8 @@ Traits pleins : appels directs. Pointillés : vérification ou observation.
 - Point d'accès mobile Windows `RESILIENCE-G3`, réseau `192.168.137.0/24`. L'ESP8266 s'y connecte en WiFi. La caméra USB est branchée sur le PC Hôte (obligation de la consigne).
 - PC Hôte en `192.168.137.1`, qui fait tourner tous les conteneurs.
 - Depuis le réseau, on ne doit accéder qu'au WAF, sur un port dédié. Il redirige vers les conteneurs applicatifs. Les bases, le proxy Docker et les secrets ne sont pas publiés.
-- Le compose de l'infra sépare quatre réseaux Docker : `frontend` (seul le WAF), `backend` (les applications entre elles), `data` (applications et bases), `monitoring` (Prometheus, Loki, Grafana, Wazuh).
-- État actuel du compose : le WAF écoute sur le port 80, et Prometheus (9090), Grafana (3000) et Wazuh (1514, 1515, 55000) sont aussi publiés. À restreindre, voir 10.1.
+- Le compose de l'infra sépare trois réseaux Docker : `backend` (les applications entre elles, le WAF, Prometheus et Ansible), `data` (applications et bases), `monitoring` (Prometheus, Loki, Grafana).
+- État actuel du compose : le WAF écoute sur le port 80, et Prometheus (9090) et Grafana (3000) sont aussi publiés. À restreindre, voir 10.1.
 
 ## 3. Le scénario vu par les services
 
@@ -246,7 +241,7 @@ La consigne dit : « recommencer 1 fois puis être bloqué 5 minutes, etc. ». O
 - Un identifiant inconnu suit le même parcours et échoue à l'étape du visage : on ne révèle pas quels comptes existent.
 - Les photos ne sont **pas conservées**. Les gabarits de visage sont des données biométriques, donc sensibles : volume non exposé, accès limité à `auth`, à mentionner dans l'analyse de risques.
 - Une reconnaissance sur photo peut être trompée par une photo imprimée ou affichée sur un écran. La détection de « vivant » dépasse le périmètre de quatre jours, c'est une limite à nommer dans le dossier.
-- Les échecs de visage, de mot de passe et les blocages sont **journalisés** (identifiant, IP, motif) comme les échecs de connexion client, pour le détecteur et le SIEM.
+- Les échecs de visage, de mot de passe et les blocages sont **journalisés** (identifiant, IP, motif) comme les échecs de connexion client, pour le détecteur et l'observabilité (Loki, Grafana).
 - Les actions d'administration (création, rôles, enregistrement d'un visage) sont journalisées. On ne peut pas supprimer le dernier `admin`.
 
 ## 5. Remédiation : playbooks
@@ -309,8 +304,8 @@ Ce que les autres attendent de nous, et ce qu'on attend d'eux :
 | Avec qui    | Interface                                                                                                                                                                                                                                                                                 |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | IA / ML     | Le détecteur appelle `POST /v1/incidents` sur la remédiation avec un jeton `svc:detector`. Il lit nos métriques et nos logs. **Code livré** (`ml/ai-runtime`, PR mergée le 2026-10-21) : détecteur (lecture seule du modèle, `GET /detector/v1/model`) et assistant RAG (`POST /assistant/v1/chat`) tournent dans `docker-compose.dev.yml`, testés en vrai avec un jeton `svc:dashboard` réel. **Livraison automatique des incidents volontairement désactivée** côté IA tant que le modèle n'est pas `status: validated` (aujourd'hui `provisional_not_validated`) : aucun risque de faux incident pour l'instant. Reste ouvert : routage WAF de `/assistant/*` et `/detector/*` (sans retrait de préfixe, contrairement aux autres), et connexion aux vrais logs (`auth`) une fois le détecteur prêt à être validé. |
-| Infra       | Le compose de l'infra (`infra/compose`) lance les services, les bases, le WAF, l'observabilité, Wazuh et un nœud Ansible. Chaque service DEV fournit un `Dockerfile`, `/healthz`, `/metrics` et des logs JSON sur la sortie standard.                                                     |
-| Cyber       | Le WAF est un reverse proxy Nginx avec ModSecurity. Il doit offrir une façon de bloquer et débloquer une IP que la remédiation peut appeler (à définir). Le SIEM est Wazuh : il collecte les événements, l'authentification en priorité, et envoie des notifications (mail, bot Discord). |
+| Infra       | Le compose de l'infra (`infra/compose`) lance les services, les bases, le WAF, l'observabilité et un nœud Ansible. Chaque service DEV fournit un `Dockerfile`, `/healthz`, `/metrics` et des logs JSON sur la sortie standard.                                                     |
+| Cyber       | Le WAF est un reverse proxy Nginx avec ModSecurity. Il doit offrir une façon de bloquer et débloquer une IP que la remédiation peut appeler (à définir). L'observabilité (Prometheus, Loki, Promtail, Grafana) collecte les événements, l'authentification en priorité. |
 | IA / visage | Le service de reconnaissance faciale existe déjà (`ml/face`, Python, dlib) : `POST /recognize` (utilisateur, photo en base64, réponse `recognized` et `distance`) et `POST /enroll`. Seul `auth` doit l'appeler, avec l'identifiant du compte comme clé.                                  |
 | IoT         | L'ESP8266 s'abonne au sujet MQTT `resilience/led` avec un identifiant en lecture seule. `auth` y publie.                                                                                                                                                                                  |
 
@@ -321,33 +316,32 @@ Ce que les autres attendent de nous, et ce qu'on attend d'eux :
 **Déjà répondu**
 
 - Réseau : hotspot `RESILIENCE-G3`, `192.168.137.0/24`, PC Hôte en `192.168.137.1`.
-- Seul le WAF doit être joignable depuis le réseau, sur un port dédié (par exemple 2502). Il atteint le front, l'API et le SIEM.
+- Seul le WAF doit être joignable depuis le réseau, sur un port dédié (par exemple 2502). Il atteint le front, l'API et le back-office.
 - WAF : reverse proxy avec ModSecurity.
-- SIEM : collecte tous types d'événements (système, endpoint, réseau, authentification, cette dernière étant la plus importante) et envoie des notifications par mail ou bot Discord.
-- Un compose complet existe dans `infra/compose` (services, bases, WAF, Prometheus, Loki, Promtail, Grafana, Wazuh manager, Ansible).
+- Observabilité : collecte des événements applicatifs (authentification en priorité) dans Loki, avec les métriques Prometheus et les tableaux de bord Grafana.
+- Un compose complet existe dans `infra/compose` (services, bases, WAF, Prometheus, Loki, Promtail, Grafana, Ansible).
 
 **Encore ouvert avec la cyber**
 
 - Comment la remédiation bloque une IP dans le WAF (API, fichier rechargé, autre) et pour combien de temps. La question n'a pas encore de réponse.
-- Le WAF doit aussi router vers `auth` (le brute force vise la connexion), vers le dashboard et vers le back-office : seuls le front, l'API et le SIEM ont été cités. À confirmer.
-- Le SIEM alimente-t-il aussi le détecteur, ou est-il seulement affiché et notifié ?
+- Le WAF doit aussi router vers `auth` (le brute force vise la connexion), vers le dashboard et vers le back-office : seuls le front et l'API ont été cités. À confirmer.
 - Comment les secrets arrivent dans les conteneurs.
 - La transaction de test passe-t-elle par le WAF, et avec quelle IP ?
 
 **Encore ouvert avec l'infra** (écarts entre le compose et notre architecture)
 
-- **Ports publiés** : en plus du WAF (port 80 aujourd'hui, 2502 évoqué), Prometheus, Grafana et Wazuh sont publiés sur toutes les interfaces, donc visibles depuis le hotspot. Les lier à `127.0.0.1`, et fixer le port du WAF.
-- **Routage du WAF** : l'image `owasp/modsecurity-crs` n'a qu'un seul `BACKEND` (`application`). Il faut des routes vers `auth`, `api`, le dashboard, le back-office et le SIEM.
+- **Ports publiés** : en plus du WAF (port 80 aujourd'hui, 2502 évoqué), Prometheus et Grafana sont publiés sur toutes les interfaces, donc visibles depuis le hotspot. Les lier à `127.0.0.1`, et fixer le port du WAF.
+- **Routage du WAF** : l'image `owasp/modsecurity-crs` n'a qu'un seul `BACKEND` (`application`). Il faut des routes vers `auth`, `api`, le dashboard et le back-office.
 - **Remédiation** : elle n'a pas de base, pas d'accès au proxy Docker (absent du compose) et pas de moyen de bloquer une IP dans le WAF.
 - **Noms et services manquants** : aligner `application` et `api-paiement` avec `front` et `api`, et ajouter des conteneurs `dashboard` et `backoffice`.
 - **Code et images** : le compose monte `./apps/<nom>` dans une image `node:20-alpine` et lance `npm install` à chaque démarrage. Notre code est dans `services/<nom>`, et on veut un `Dockerfile` par service en `node:22-slim` (Prisma sur Alpine pose problème).
 - **Healthchecks** : seules les bases en ont. Les services DEV exposeront `/healthz`.
 - **Secrets** : un `.env` obligatoire sans exemple fourni, et aucune intégration de la méthode de secrets choisie.
-- **Mémoire** : le README annonce environ 4 Go pour Wazuh et le reste de la stack, à confirmer en regard des 16 Go du PC Hôte.
+- **Mémoire** : le README annonce environ 4 Go pour l'ensemble de la stack, à confirmer en regard des 16 Go du PC Hôte.
 
 **IA / Data**
 
-- Sources lues par le détecteur (Prometheus, Loki, le SIEM ?).
+- Sources lues par le détecteur (Prometheus, Loki).
 - **Format de `POST /v1/incidents`.** Contrat proposé d'après leurs champs (type `BRUTE_FORCE`, date, IP source, comptes visés, score, tentatives, échecs, durée) :
 
   ```json

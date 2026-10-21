@@ -368,7 +368,7 @@ networks:
   backend: # applications entre elles + mosquitto (créé par la pile infra)
     name: resilience-alpha_backend
     external: true
-  monitoring: # Prometheus, Loki, Grafana, Wazuh (créé par la pile infra)
+  monitoring: # Prometheus, Loki, Grafana (créé par la pile infra)
     name: resilience-alpha_monitoring
     external: true
   data: # applications <-> bases de données (propre à cette pile)

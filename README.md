@@ -9,7 +9,7 @@ Plateforme de paiement fictive capable de **encaisser une attaque et de se réta
 ```
 services/      DEV    front, api (paiements), auth, remediation, dashboard, backoffice (TypeScript : Express, React, Prisma)
 packages/      DEV    shared (schémas zod, types, client HTTP typé)
-infra/         INFRA  compose/, ansible/, waf/, observability/, siem/
+infra/         INFRA  compose/, ansible/, waf/, observability/
                CYBER  secrets/ (SOPS+age, fichiers *.enc.yaml uniquement)
 ml/            IA     detector/ (détection d'anomalies), assistant/ (RAG Ollama),
                       face/ (reconnaissance faciale du back-office),
@@ -49,7 +49,7 @@ Chaque service a son propre `.env.example` (`services/<nom>/.env.example`) avec 
 
 ## Lancer toute la plateforme (Docker Compose)
 
-Démarre tout avec des images construites depuis le code réel (`services/*`), comme en démo — pas les prototypes `apps/*` ni des serveurs `npm run dev`. La pile est coupée en 3 fichiers Compose (voir [`infra/compose/README.md`](infra/compose/README.md)) : **infra** (observabilité, mosquitto, Ansible), **dev** (les 7 services DEV + leurs bases, l'IA faciale, le détecteur et l'assistant RAG), **cyber** (WAF, SIEM — routage par préfixe fait pour `/auth`, `/api`, `/remediation`).
+Démarre tout avec des images construites depuis le code réel (`services/*`), comme en démo — pas les prototypes `apps/*` ni des serveurs `npm run dev`. La pile est coupée en 3 fichiers Compose (voir [`infra/compose/README.md`](infra/compose/README.md)) : **infra** (observabilité, mosquitto, Ansible), **dev** (les 7 services DEV + leurs bases, l'IA faciale, le détecteur et l'assistant RAG), **cyber** (le WAF, point d'entrée unique — routage par préfixe fait pour `/auth`, `/api`, `/remediation`).
 
 ### 1. Préparer la configuration (une fois)
 
@@ -78,7 +78,7 @@ Sans ça, le conteneur `detector` démarre puis boucle en échec (modèle introu
 ```bash
 docker compose -f docker-compose.infra.yml  up -d --build   # réseaux partagés, Prometheus, Grafana, Loki, mosquitto, Ansible
 docker compose -f docker-compose.dev.yml    up -d --build   # auth, api, remediation, front, dashboard, backoffice, face, detector, assistant, 3 bases
-docker compose -f docker-compose.cyber.yml  up -d waf       # WAF seul suffit pour tester (le SIEM complet est plus lourd)
+docker compose -f docker-compose.cyber.yml  up -d waf       # le WAF, point d'entrée unique
 ```
 
 Vérifier que tout est sain :
@@ -161,7 +161,7 @@ Les messages suivent [Conventional Commits](https://www.conventionalcommits.org/
 | `chore`    | maintenance, outillage, structure          |
 | `revert`   | annulation d'un commit                     |
 
-Scopes conseillés : `api`, `auth`, `remediation`, `dashboard`, `front`, `shared`, `infra`, `waf`, `siem`, `ml`, `attacks`, `docs`.
+Scopes conseillés : `api`, `auth`, `remediation`, `dashboard`, `front`, `shared`, `infra`, `waf`, `ml`, `attacks`, `docs`.
 
 Exemples : `feat(api): add idempotency key on transactions`, `fix(remediation): verify canary before RESOLVED`, `chore: init monorepo structure`.
 

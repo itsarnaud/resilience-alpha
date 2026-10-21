@@ -116,7 +116,7 @@ services:
 networks:
   backend: # applications entre elles
     name: resilience-alpha_backend
-  monitoring: # Prometheus, Loki, Grafana, Wazuh
+  monitoring: # Prometheus, Loki, Grafana
     name: resilience-alpha_monitoring
   remediation: # moteur de remédiation <-> socket-proxy (isolé)
     name: resilience-alpha_remediation

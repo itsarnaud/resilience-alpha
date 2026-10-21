@@ -114,7 +114,7 @@ Réservées aux comptes `admin`. `services/AdminServices.ts` :
 
 Pas de suppression d'un visage (le service de l'IA n'a pas cette route) : limite documentée dans `ml/face/README.md`.
 
-### Journalisation (SIEM)
+### Journalisation (observabilité)
 
 Chaque étape est un événement JSON : `backoffice_login_started`, `backoffice_face_result` (avec le score), `backoffice_login_failed` (`stage`: `face` ou `password`, `locked`, `lock_level`), `backoffice_login_blocked`, `backoffice_login_succeeded`, `led_state_changed`, `led_publish_failed`, `face_service_unavailable`. Métriques : `auth_backoffice_logins_total{result}`, `auth_backoffice_lockouts_total`, `auth_led_publish_total{result}`.
 

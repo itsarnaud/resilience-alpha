@@ -1,6 +1,6 @@
 # PROJECT RESILIENCE-ALPHA : infrastructure Docker
 
-Stack complète du workshop : applications Node.js, bases PostgreSQL, WAF, observabilité (Prometheus, Loki, Grafana), SIEM (Wazuh) et automatisation (Ansible).
+Stack complète du workshop : applications Node.js, bases PostgreSQL, WAF, observabilité (Prometheus, Loki, Grafana) et automatisation (Ansible).
 
 La stack est découpée en **3 piles** (3 projets Docker Compose) qui tournent sur la même machine :
 
@@ -8,14 +8,14 @@ La stack est découpée en **3 piles** (3 projets Docker Compose) qui tournent s
 | --------- | -------------------------- | ---------------------------------------------------------------------------------------------- |
 | **Infra** | `docker-compose.infra.yml` | Observabilité (Prometheus, node-exporter, Loki, Promtail, Grafana) et automatisation (Ansible) |
 | **Dev**   | `docker-compose.dev.yml`   | Applications Node.js et leurs bases PostgreSQL                                                 |
-| **Cyber** | `docker-compose.cyber.yml` | WAF (point d'entrée) et SIEM (Wazuh)                                                           |
+| **Cyber** | `docker-compose.cyber.yml` | WAF (point d'entrée unique)                                                                    |
 
 
 ## Prérequis
 
 - Docker Desktop (ou Docker Engine + Compose v2) démarré
 - Environ 4 Go de RAM libres pour l'ensemble de la stack
-- Ports libres sur la machine : `80`, `1883`, `3000`, `3001`, `3002`, `3010`, `5173`, `5174`, `5175`, `8011`, `8012`, `8081`, `8082`, `9090`, `1514`, `1515`, `55000` (`3000` est pris par Grafana : `auth` est donc publié sur `3010`, voir [le README principal](../../README.md#lancer-toute-la-plateforme-docker-compose))
+- Ports libres sur la machine : `80`, `1883`, `3000`, `3001`, `3002`, `3010`, `5173`, `5174`, `5175`, `8011`, `8012`, `8081`, `8082`, `9090` (`3000` est pris par Grafana : `auth` est donc publié sur `3010`, voir [le README principal](../../README.md#lancer-toute-la-plateforme-docker-compose))
 - `services/auth/keys/jwt.pem` généré une fois (voir le README principal, section « Lancer toute la plateforme »)
 - `detector`/`assistant` (IA) : le modèle ML et la base de connaissances copiés dans `ml/ai-runtime/models` et `ml/ai-runtime/data` (gitignorés, depuis la livraison de l'IA), et [Ollama](https://ollama.com) lancé sur la machine hôte avec `qwen2.5:3b` et `embeddinggemma:300m` — voir le README principal et `ml/ai-runtime/deploy/AI_HANDOFF.md`.
 
@@ -60,20 +60,18 @@ Le premier lancement télécharge et construit les images (quelques minutes). D�
 | `assistant`                                | Dev   | Assistant RAG, documentation du projet (IA, `ml/ai-runtime` + Ollama hôte) | `8012` (accès direct, debug)                                   |
 | `db-auth`, `db-paiement`, `db-remediation` | Dev   | Une base PostgreSQL 16 par service                                         | interne                                                        |
 | `waf`                                       | Cyber | Reverse proxy Nginx + ModSecurity (règles OWASP CRS), point d'entrée unique | http://localhost                                              |
-| `wazuh-manager`                            | Cyber | SIEM (manager seul, sans interface web)                                     | API : https://localhost:55000                                 |
 
 ## Réseaux
 
-Les services sont séparés en 4 réseaux pour limiter les accès. Les réseaux partagés ont un nom fixe pour que les 3 piles se retrouvent :
+Les services sont séparés en 3 réseaux pour limiter les accès. Les réseaux partagés ont un nom fixe pour que les 3 piles se retrouvent :
 
 | Réseau       | Nom Docker                    | Créé par        | Utilisé par                                                              |
 | ------------ | ----------------------------- | --------------- | ------------------------------------------------------------------------ |
-| `frontend`   | `resilience-alpha_frontend`   | Cyber           | WAF seul : c'est la porte d'entrée                                       |
-| `backend`    | `resilience-alpha_backend`    | Infra (partagé) | Applications entre elles, WAF, Prometheus, Wazuh, Ansible                |
+| `backend`    | `resilience-alpha_backend`    | Infra (partagé) | Applications entre elles, WAF, Prometheus, Ansible                       |
 | `data`       | `resilience-alpha_data`       | Dev             | Applications et leur base. Les bases ne sont pas exposées sur la machine |
-| `monitoring` | `resilience-alpha_monitoring` | Infra (partagé) | Prometheus, Loki, Grafana, Wazuh, Ansible, `remediation`                 |
+| `monitoring` | `resilience-alpha_monitoring` | Infra (partagé) | Prometheus, Loki, Grafana, Ansible, `remediation`                        |
 
-Comme tous les services partagent ces réseaux, ils se joignent toujours par leur nom (`http://auth:3000`, `http://prometheus:9090`, `https://wazuh-manager:55000`…), même d'une pile à l'autre.
+Comme tous les services partagent ces réseaux, ils se joignent toujours par leur nom (`http://auth:3000`, `http://prometheus:9090`…), même d'une pile à l'autre.
 
 ## Arborescence
 
@@ -81,7 +79,7 @@ Comme tous les services partagent ces réseaux, ils se joignent toujours par leu
 infra/
 ├── docker-compose.infra.yml   # pile Infra
 ├── docker-compose.dev.yml     # pile Dev
-├── docker-compose.cyber.yml   # pile Cyber
+├── docker-compose.cyber.yml   # pile Cyber (WAF)
 ├── .env                       # à créer depuis .env.example, ne pas partager
 ├── apps/                      # anciens prototypes Node CommonJS, remplacés par services/* (voir plus bas)
 ├── ansible/                   # pile Infra
@@ -91,7 +89,8 @@ infra/
     ├── mosquitto/mosquitto.conf
     ├── prometheus/prometheus.yml
     ├── promtail/config.yml
-    └── grafana/provisioning/datasources/datasources.yml
+    ├── grafana/provisioning/datasources/datasources.yml
+    └── waf/                   # pile Cyber : templates Nginx + ModSecurity
 ```
 
 ## Le code des services Dev
@@ -117,9 +116,6 @@ Le fichier `.env` (commun aux 3 piles, voir [`.env.example`](.env.example)) doit
 | `SVC_DETECTOR_SECRET`, `SVC_DASHBOARD_SECRET`, `SVC_REMEDIATION_SECRET`                    | comptes de service (`auth`, `remediation`)     | Dev   |
 | `MQTT_AUTH_USERNAME`, `MQTT_AUTH_PASSWORD`                                                 | `auth` sur le broker `mosquitto`               | Dev   |
 | `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`                                             | `grafana`                                      | Infra |
-| `WAZUH_API_USER`, `WAZUH_API_PASSWORD`                                                     | `wazuh-manager`                                | Cyber |
-
-Le mot de passe Wazuh doit être fort : au moins 8 caractères, avec majuscule, minuscule, chiffre et symbole.
 
 ## Commandes utiles
 
@@ -156,10 +152,9 @@ Ajouter `-v` à chaque `down` pour supprimer **aussi** les données de la pile c
 - **Erreur 502 sur http://localhost** : le WAF n'a pas encore de route vers les services dev (pile cyber pas encore branchée dessus — voir le README principal).
 - **`network resilience-alpha_backend not found`** au lancement de dev ou cyber : la pile infra n'est pas lancée.
 - **Services « down » dans Prometheus** : ils n'exposent pas encore `/metrics`, ou ne sont pas démarrés.
-- **Erreurs `wazuh.indexer` dans les logs de Wazuh** : seul le manager est installé, pas l'indexer. Le manager fonctionne quand même.
 - **Conflit de port ou de nom de conteneur au démarrage** : un autre projet Docker Compose sur la machine (TP, essai précédent) utilise déjà ce nom ou ce port — voir le README principal, section « Si un port ou un nom de conteneur est déjà pris ».
 
 ## Partager ce dossier
 
 - Ne pas inclure le fichier `.env` (il contient les mots de passe).
-- Les données (bases, Grafana, Wazuh, visages enrôlés) sont stockées dans des volumes Docker, pas dans ce dossier : elles ne partent donc pas avec.
+- Les données (bases, Grafana, visages enrôlés) sont stockées dans des volumes Docker, pas dans ce dossier : elles ne partent donc pas avec.

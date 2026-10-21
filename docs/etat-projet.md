@@ -12,7 +12,7 @@ Zéro intervention humaine : détecter → décider → agir → prouver.
 
 Trois machines :
 
-- **PC Hôte** — héberge toute la plateforme (conteneurs Docker) : banque, WAF, SIEM,
+- **PC Hôte** — héberge toute la plateforme (conteneurs Docker) : banque, WAF,
   observabilité, moteur de remédiation. C'est aussi le point d'accès Wi-Fi des objets.
 - **PC Attaquant** — lance les attaques (brute-force, etc.).
 - **PC Délestage IA** — assistant RAG en lecture seule (optionnel, voir §7).
@@ -28,13 +28,13 @@ redémarrage) → transaction canari de preuve → service rétabli**. MTTR mesu
 |---|---|---|
 | **Infra** | `docker-compose.infra.yml` | Prometheus, node-exporter, Loki, Promtail, Grafana, Ansible, Mosquitto (MQTT), docker-socket-proxy, blackbox |
 | **Dev** | `docker-compose.dev.yml` | `auth`, `api`, `remediation`, `front`, `dashboard`, `backoffice`, `face`, `log-detector`, 3 bases PostgreSQL |
-| **Cyber** | `docker-compose.cyber.yml` | `waf` (point d'entrée), SIEM Wazuh (indexer, manager, dashboard) |
+| **Cyber** | `docker-compose.cyber.yml` | `waf` (point d'entrée unique) |
 
 **Ordre de lancement impératif** : infra → dev → cyber (infra crée les réseaux partagés).
 
-Réseaux : `frontend` (WAF), `backend` (apps ↔ apps + WAF + Prometheus + Wazuh),
-`data` (apps ↔ bases, non exposé), `monitoring`, `remediation` (moteur ↔ socket-proxy),
-`wazuh-net` (SIEM).
+Réseaux : `backend` (apps ↔ apps + WAF + Prometheus + Ansible),
+`data` (apps ↔ bases, non exposé), `monitoring` (Prometheus, Loki, Grafana, Ansible),
+`remediation` (moteur ↔ socket-proxy).
 
 ---
 
@@ -66,9 +66,18 @@ Réseaux : `frontend` (WAF), `backend` (apps ↔ apps + WAF + Prometheus + Wazuh
 - **Blocage d'IP réel** : volume `resilience-alpha_waf_denylist` monté en lecture, inclus
   dans les 3 server blocks (`deny <ip>;`), rechargé par signal HUP depuis la remédiation.
 
-### ✅ SIEM — Wazuh
-- indexer + manager + dashboard (`https://localhost:5601`, admin / SecretPassword).
-- Récupère déjà les logs Docker. (Alimentation depuis une BDD de logs côté dev : en cours.)
+### ✅ Observabilité (niveau 0) — Grafana + Loki
+- Le SIEM Wazuh a été **retiré du périmètre** : il ne recevait aucun log applicatif
+  (0 agent enregistré, le filebeat du manager ne lisant que ses propres alertes).
+- La lecture des événements se fait donc dans **Grafana** (datasource **Loki** préconfigurée),
+  alimenté par **Promtail** qui lit le socket Docker et scrape les conteneurs qui portent
+  le label `logging=promtail` : `auth`, `api`, `remediation`, `waf`.
+- Flux disponibles en temps réel : `{container="auth"}` (évenements `login_failed` /
+  `login_succeeded` avec email, IP, motif), `{container="waf"}` (accès nginx : 401 puis
+  403 après un ban), `{container="remediation"}` (`ip_blocked`, `incident_resolved`).
+- Dashboards provisionnés : **Securite-WAF-Journaux** (blocages 403, volume de journaux par
+  conteneur, journaux WAF en direct) et **Remediation** (MTTR, incidents, journal du moteur).
+- Les métriques Prometheus (état du moteur, compteurs d'incidents) complètent la lecture.
 
 ### ✅ Remédiation autonome (le cœur du sujet)
 - `log-detector` (sans ML) : interroge `login_attempts` (db-auth) toutes les 5 s → IP avec
@@ -99,7 +108,6 @@ Réseaux : `frontend` (WAF), `backend` (apps ↔ apps + WAF + Prometheus + Wazuh
   tourne. Le `log-detector` simple assure déjà la détection autonome.
 - **Enrôlement du visage admin** : à faire après chaque reset (le visage n'est pas pré-seedé).
   Procédure : login via bootstrap puis `POST /admin/users/:id/face` (voir §6).
-- **Alimentation Wazuh depuis la BDD de logs** (pour bannir en direct côté SIEM) : en cours.
 - **Livrables** : Dossier (PDF), Présentation (PPTX), Vidéo chronométrée (MP4).
 
 ---
@@ -114,7 +122,7 @@ Prérequis : Docker Desktop démarré, `.env` à la racine de `infra/compose`, c
 cd infra/compose
 docker compose -f docker-compose.infra.yml up -d
 docker compose -f docker-compose.dev.yml  up -d --build
-docker compose -f docker-compose.cyber.yml up -d --build
+docker compose -f docker-compose.cyber.yml up -d
 ```
 
 Seed des comptes (premier démarrage ou après reset des volumes) :
@@ -130,7 +138,6 @@ docker compose -f docker-compose.dev.yml exec api  node dist/scripts/seed.js
 | Dashboard supervision | http://localhost:8081/ | operator@resilience.local / operator-dev-pwd |
 | Back-office (MFA faciale) | http://localhost:8082/ | admin@resilience.local / admin-dev-pwd |
 | Grafana | http://localhost:3000 | admin / (voir `.env`) |
-| Wazuh SIEM | https://localhost:5601 | admin / SecretPassword |
 
 ---
 

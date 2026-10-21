@@ -48,7 +48,7 @@ test/                 tests d'intégration
 - `unknown_beneficiary` : l'IBAN n'est pas dans les bénéficiaires du client ;
 - `amount_over_limit` : le montant dépasse `EXTERNAL_TRANSFER_LIMIT_CENTS` (500 EUR par défaut).
 
-Chaque refus est enregistré (statut `REJECTED`, avec son motif), journalisé (`event: fraud_blocked`, avec l'IP, le compte et l'IBAN visés) et compté (`payments_fraud_blocked_total{reason}`). C'est le signal que la détection et le SIEM exploitent. Un virement entre comptes internes désignés par leur id n'est pas concerné.
+Chaque refus est enregistré (statut `REJECTED`, avec son motif), journalisé (`event: fraud_blocked`, avec l'IP, le compte et l'IBAN visés) et compté (`payments_fraud_blocked_total{reason}`). C'est le signal que la détection et l'observabilité exploitent. Un virement entre comptes internes désignés par leur id n'est pas concerné.
 
 **Transaction de test (canari).** Le rôle `svc:remediation-canary` (jeton du client `svc-remediation` d'`auth`) lit ses deux comptes (`GET /v1/accounts`, créés par le seed) et vire entre eux avec `X-Synthetic: true`. Ce rôle ne peut ni virer vers un IBAN ni omettre l'en-tête, et un client ne peut pas envoyer `X-Synthetic`. Les virements synthétiques sont marqués `synthetic: true`.
 

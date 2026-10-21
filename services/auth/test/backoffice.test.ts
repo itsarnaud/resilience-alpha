@@ -205,7 +205,7 @@ describe.skipIf(!DB_URL)('connexion du back-office', () => {
       expect((await request(app).get(`/v1/backoffice/login/${id}`)).body.state).toBe('GRANTED');
     });
 
-    it('journalise chaque étape pour le SIEM, sans mot de passe ni photo', async () => {
+    it('journalise chaque étape pour l'observabilité, sans mot de passe ni photo', async () => {
       const { id } = await faceStep();
       await sendPassword(id, ADMIN_PASSWORD);
       const events = logs.map((l) => l.obj.event);
