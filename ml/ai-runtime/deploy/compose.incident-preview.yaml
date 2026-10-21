@@ -1,0 +1,23 @@
+# Use together with compose.ai.yaml; preview persists incidents without sending them.
+services:
+  incident-preview:
+    extends:
+      file: compose.ai.yaml
+      service: observer
+    profiles: [incident-preview]
+    command:
+      - python
+      - -m
+      - resilience_alpha_ai.anomaly_detection.incident_worker
+      - --mode
+      - preview
+      - --loki-url
+      - ${LOKI_URL:?Set LOKI_URL}
+      - --query
+      - ${LOKI_QUERY:?Set LOKI_QUERY}
+      - --model
+      - /app/models/auth_isolation_forest_synthetic.joblib
+      - --threshold-config
+      - /app/models/auth_threshold_candidate.json
+      - --pipeline-db
+      - /app/.storage/incident_preview.sqlite

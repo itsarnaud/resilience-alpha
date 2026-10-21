@@ -1,0 +1,36 @@
+services:
+  detector-api:
+    image: resilience-alpha-ai:dev
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      DETECTOR_MODEL_PATH: /app/models/auth_isolation_forest_synthetic.joblib
+      DETECTOR_STATE_DB: /app/.storage/observations.sqlite
+      AUTH_JWKS_URL: "${AUTH_JWKS_URL:?Set AUTH_JWKS_URL before starting}"
+      JWT_ISSUER: resilience-auth
+      JWT_AUDIENCE: resilience-platform
+    volumes:
+      - type: bind
+        source: ../models
+        target: /app/models
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../.storage
+        target: /app/.storage
+        bind:
+          create_host_path: false
+    command:
+      - python
+      - -m
+      - uvicorn
+      - resilience_alpha_ai.api.detector:create_app
+      - --factory
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"

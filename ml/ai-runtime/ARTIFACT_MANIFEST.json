@@ -1,0 +1,80 @@
+{
+  "team_base_commit": "b6a12d7dbac7bf00f08f0734ac03960dddd17021",
+  "ai_source_commit": "60413ce3d2f78b65b12d665841dfce479244abbb",
+  "created_at": "2026-10-21T09:21:16.695568+00:00",
+  "artifacts": [
+    {
+      "path": "models/auth_isolation_forest_synthetic.joblib",
+      "sha256": "a590d2f5021f14e3e08bd68e6aa462d0ba7789cabdbee3ad331aaf06202d84ca",
+      "size_bytes": 1105419,
+      "git_included": false
+    },
+    {
+      "path": "models/auth_threshold_candidate.json",
+      "sha256": "38b298bb9d6dad6c5487321d650d6e90bba11e6d0464d1f2cf9911f580c10789",
+      "size_bytes": 440,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/team_repository/docs/architecture.md",
+      "sha256": "becc70330c5e1db93511acb51b1483b77e2db6ff9043ec137e8bc341ed8c66a8",
+      "size_bytes": 33170,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/team_repository/docs/consigne-additionnelle-1.md",
+      "sha256": "0ced0e2d31c1d0590045f5c2ba119c212e1d00c87239050dfed95c3a8d3d9d55",
+      "size_bytes": 4769,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/team_repository/iot/esp8266-led/README.md",
+      "sha256": "324519f2d9ad303c7ae2614c756f6692ec210ac8c026d8c30143911aee5f1337",
+      "size_bytes": 1598,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/team_repository/ml/face/README.md",
+      "sha256": "d5ce0b82a8ab1ea9938b087bd9b64f384e8c5e63619145495248016cd0556fb9",
+      "size_bytes": 3169,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/team_repository/README.md",
+      "sha256": "c5d2c05b7eba184eba9faca8be560fe77507c4509d14c74cec16444d87df7826",
+      "size_bytes": 4064,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/team_repository/services/api/README.md",
+      "sha256": "d3f2574796d13c979e78fa60cbf10f179873add86a923b95a38b0be1e4fe0ef4",
+      "size_bytes": 7983,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/team_repository/services/auth/README.md",
+      "sha256": "9e25f206beacd1600701037be4e6945b74d6c1fc2df145a59a4e28a33aa6cc35",
+      "size_bytes": 13001,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/team_repository/services/remediation/README.md",
+      "sha256": "d3b0a9d2d9b7744fc55ef6a2a990feec26bd4ab7627ba77169c79401e4343f05",
+      "size_bytes": 9553,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/team_repository/SOURCE_VERSION.txt",
+      "sha256": "ddd9c2cd440aeff2ccdd5ac21378dc3cf64eb7c4ed44913383a80092c45bda85",
+      "size_bytes": 410,
+      "git_included": false
+    },
+    {
+      "path": "data/knowledge_base/Workshop 2026-27 M2 - Sujet PROJECT RESILIENCE-ALPHA.pdf",
+      "sha256": "5a1631a92305c4637207ea9a41064c0a31839d906f57e8236db2454e82a111be",
+      "size_bytes": 2452125,
+      "git_included": false
+    }
+  ],
+  "evaluation_report": "reports/validation/local_auth_evaluation.json"
+}
