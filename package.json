@@ -11,7 +11,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "prepare": "npm run build:shared",
+    "prepare": "husky && npm run build:shared",
     "build:shared": "npm run build -w packages/shared",
     "format": "prettier --write .",
     "check:secrets": "bash scripts/check-secrets.sh",
@@ -22,6 +22,9 @@
     "test": "bash scripts/run-tests.sh"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "husky": "^9.1.7",
     "prettier": "^3.3.3"
   }
 }
