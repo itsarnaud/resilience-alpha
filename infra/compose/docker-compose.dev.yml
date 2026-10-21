@@ -297,6 +297,28 @@ services:
     networks: [backend]
 
   # ---------- Bases de données PostgreSQL (une par service) ----------
+  # ---------- Détecteur brute-force (sans ML) : logs auth -> ban via remédiation ----------
+  log-detector:
+    build: ../../ml/log-detector
+    container_name: log-detector
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${DB_AUTH_USER}:${DB_AUTH_PASSWORD}@db-auth:5432/${DB_AUTH_NAME}
+      AUTH_URL: http://auth:3000
+      REMEDIATION_URL: http://remediation:3000
+      DETECTOR_CLIENT_ID: svc-detector
+      DETECTOR_CLIENT_SECRET: ${SVC_DETECTOR_SECRET}
+      WINDOW_SECONDS: '120'   # fenêtre d'observation
+      MIN_FAILURES: '5'       # échecs pour déclencher (= MIN_FAILURES côté remédiation)
+      POLL_SECONDS: '5'       # scrutation temps réel
+      SCORE: '0.95'           # doit dépasser MIN_SCORE (0.6) côté remédiation
+      PROTECTED_IPS: 127.0.0.1,::1,192.168.137.1
+    depends_on:
+      db-auth: { condition: service_healthy }
+    labels:
+      logging: promtail
+    networks: [backend, data]  # data = db-auth ; backend = auth + remediation
+
   db-auth:
     image: postgres:16-alpine
     container_name: db-auth
