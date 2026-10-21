@@ -38,6 +38,8 @@ services:
       # Exclusion CRS ciblee (login back-office) via modsecurity-override.conf,
       # inclus inconditionnellement par l'image AVANT les regles CRS.
       - ./config/waf/modsecurity-override.conf:/etc/nginx/templates/modsecurity.d/modsecurity-override.conf.template:ro
+      # Liste de blocage d'IP ecrite par la remediation (volume partage, externe).
+      - waf_denylist:/etc/nginx/denylist:ro
     # L'image sonde https://localhost:8443/healthz par defaut ; on a retire le bloc SSL,
     # donc on sonde le /healthz HTTP sur le port front (8080).
     healthcheck:
@@ -184,6 +186,9 @@ networks:
     name: wazuh-net
 
 volumes:
+  waf_denylist: # ecrite par la remediation (pile dev), lue par le WAF
+    name: resilience-alpha_waf_denylist
+    external: true
   wazuh_certs:
   wazuh_etc:
   wazuh_logs:

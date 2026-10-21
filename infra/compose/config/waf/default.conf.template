@@ -29,6 +29,11 @@ server {
     server_name _;
     client_max_body_size 12m;
 
+    # Liste de blocage d'IP pilotee par la remediation (volume partage, recharge
+    # par signal HUP). Glob tolerant : si le fichier n'existe pas encore, nginx
+    # demarre quand meme. Au niveau server -> deny applique a toutes les routes.
+    include /etc/nginx/denylist/*.conf;
+
     location / {
         set $app front;
         proxy_pass http://$app:8080;
@@ -44,6 +49,11 @@ server {
     listen 8081;
     server_name _;
     client_max_body_size 12m;
+
+    # Liste de blocage d'IP pilotee par la remediation (volume partage, recharge
+    # par signal HUP). Glob tolerant : si le fichier n'existe pas encore, nginx
+    # demarre quand meme. Au niveau server -> deny applique a toutes les routes.
+    include /etc/nginx/denylist/*.conf;
 
     location / {
         set $app dashboard;
@@ -75,6 +85,11 @@ server {
     listen 8082;
     server_name _;
     client_max_body_size 12m;
+
+    # Liste de blocage d'IP pilotee par la remediation (volume partage, recharge
+    # par signal HUP). Glob tolerant : si le fichier n'existe pas encore, nginx
+    # demarre quand meme. Au niveau server -> deny applique a toutes les routes.
+    include /etc/nginx/denylist/*.conf;
 
     location / {
         set $app backoffice;
