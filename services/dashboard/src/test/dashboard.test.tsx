@@ -333,6 +333,54 @@ describe('IP bloquées', () => {
     renderApp('/blocages');
     expect(await screen.findByText('Aucune IP bloquée actuellement.')).toBeInTheDocument();
   });
+
+  it('débloque une IP et retire la ligne de la liste', async () => {
+    let unblocked = false;
+    mockFetch({
+      'GET /remediation/v1/blocks': () =>
+        json(
+          unblocked
+            ? []
+            : [
+                {
+                  id: 'b-1',
+                  ip: '203.0.113.9',
+                  incident_id: 'inc-1',
+                  created_at: '2026-10-20T09:00:00Z',
+                  expires_at: '2026-10-20T09:05:00Z',
+                },
+              ],
+        ),
+      'DELETE /remediation/v1/blocks/b-1': () => {
+        unblocked = true;
+        return json(undefined, 204);
+      },
+    });
+    renderApp('/blocages');
+    await screen.findByText('203.0.113.9');
+    await userEvent.click(screen.getByRole('button', { name: 'Débloquer' }));
+    expect(await screen.findByText('Aucune IP bloquée actuellement.')).toBeInTheDocument();
+  });
+
+  it("affiche l'erreur si le déblocage échoue", async () => {
+    mockFetch({
+      'GET /remediation/v1/blocks': json([
+        {
+          id: 'b-1',
+          ip: '203.0.113.9',
+          incident_id: 'inc-1',
+          created_at: '2026-10-20T09:00:00Z',
+          expires_at: '2026-10-20T09:05:00Z',
+        },
+      ]),
+      'DELETE /remediation/v1/blocks/b-1': json({ title: 'Blocage introuvable' }, 404),
+    });
+    renderApp('/blocages');
+    await screen.findByText('203.0.113.9');
+    await userEvent.click(screen.getByRole('button', { name: 'Débloquer' }));
+    expect(await screen.findByText('Blocage introuvable')).toBeInTheDocument();
+    expect(screen.getByText('203.0.113.9')).toBeInTheDocument();
+  });
 });
 
 // --- Assistant -------------------------------------------------------------------------------

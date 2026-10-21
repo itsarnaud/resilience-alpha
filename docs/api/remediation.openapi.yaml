@@ -3,9 +3,11 @@ info:
   title: RESILIENCE-ALPHA remediation
   version: 0.1.0
   description: |
-    Moteur de remédiation. Réseau interne, non routé par le WAF.
+    Moteur de remédiation. Joignable en direct sur le réseau interne (`remediation:3000`), et via
+    le WAF sous `/remediation/*` (préfixe retiré) sur le port du dashboard.
     Écriture (`POST /v1/incidents`) réservée à `svc:detector`. Lecture réservée à `operator` et
-    `svc:dashboard`. Le détecteur obtient son jeton auprès d'`auth` : `POST /v1/token` avec le
+    `svc:dashboard`. Levée manuelle d'un blocage (`DELETE /v1/blocks/{id}`) réservée à `operator`.
+    Le détecteur obtient son jeton auprès d'`auth` : `POST /v1/token` avec le
     client `svc-detector` (le jeton expire au bout de 15 minutes, en redemander un à ce moment).
 
     **Le score est un indice, pas une certitude.** La remédiation n'agit pas sur le score seul :
@@ -109,6 +111,22 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/IpBlock' }
+  /v1/blocks/{id}:
+    delete:
+      summary: Lever un blocage avant son échéance
+      operationId: unblockIp
+      description: |
+        Rôle requis `operator` (pas `svc:dashboard` : une action manuelle vient d'une personne).
+        Idempotent côté effet (l'IP finit débloquée), mais pas côté réponse : lever un blocage déjà
+        levé ou inexistant renvoie `404`, pas `204`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Levé }
+        '404': { description: Blocage introuvable ou déjà levé }
   /v1/services:
     get:
       summary: État courant des services supervisés (santé + dernière canari)

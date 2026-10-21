@@ -1,3 +1,4 @@
+import { HttpError } from '@resilience/shared';
 import { logger } from '../lib/logger.js';
 import { activeBlocks } from '../lib/metrics.js';
 import { prisma } from '../lib/prisma.js';
@@ -66,3 +67,22 @@ export const releaseExpired = async (): Promise<number> => {
 
 export const listActive = () =>
   prisma.ipBlock.findMany({ where: activeWhere, orderBy: { createdAt: 'desc' } });
+
+/**
+ * Lève un blocage avant son échéance, à la demande d'un opérateur (ex. faux positif, besoin de
+ * retester). `updateMany` avec le filtre d'activité : lever un blocage déjà levé ou inexistant
+ * renvoie proprement 404, sans écraser une levée concurrente.
+ */
+export const releaseOne = async (id: string, by: string): Promise<void> => {
+  const { count } = await prisma.ipBlock.updateMany({
+    where: { id, ...activeWhere },
+    data: { releasedAt: new Date() },
+  });
+  if (count === 0) throw HttpError.notFound('blocage introuvable ou déjà levé');
+  const block = await prisma.ipBlock.findUniqueOrThrow({ where: { id } });
+  await syncWaf();
+  logger.warn(
+    { event: 'ip_unblocked_manually', ip: block.ip, incident_id: block.incidentId, by },
+    'IP débloquée manuellement',
+  );
+};

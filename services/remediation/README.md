@@ -41,6 +41,7 @@ détecteur ──POST /v1/incidents──▶ politique ──▶ playbook ──
 | `GET /v1/incidents`, `/:id`                 | `operator`, `svc:dashboard` | Liste et détail, avec la chronologie des étapes.        |
 | `GET /v1/incidents/stream`                  | `operator`, `svc:dashboard` | Flux temps réel (SSE), voir ci-dessous.                 |
 | `GET /v1/playbooks`, `/services`, `/blocks` | `operator`, `svc:dashboard` | Playbooks, état des services, IP actuellement bloquées. |
+| `DELETE /v1/blocks/:id`                     | `operator`                  | Lève un blocage avant son échéance (bouton « Débloquer » du dashboard). `404` si déjà levé ou inconnu. |
 | `GET /healthz`, `/readyz`, `/metrics`       | publiques (réseau interne)  | Santé, disponibilité (la base répond), métriques.       |
 
 **Flux temps réel.** À la connexion, un événement `snapshot` (les 20 derniers incidents), puis un événement `incident` à chaque étape ou changement d'état. `EventSource` ne sait pas envoyer l'en-tête `Authorization` : le dashboard doit lire le flux avec `fetch` et son `ReadableStream`.
@@ -115,4 +116,3 @@ Le dossier `/waf` est un volume : il doit être monté **à la fois** sur la rem
 
 - La transaction de test appelle l'API **directement** (`API_URL`), pas à travers le WAF : elle prouve que l'API fonctionne, pas que le chemin public est rétabli. Pointer `API_URL` vers le WAF le ferait, à condition que l'IP de la remédiation ne soit pas bloquée.
 - Un seul exemplaire de la remédiation : les incidents sont verrouillés en mémoire, pas en base.
-- Pas de levée manuelle d'un blocage : une fausse alerte se résout à l'échéance de `BLOCK_DURATION_SECONDS`.

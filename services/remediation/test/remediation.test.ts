@@ -533,6 +533,56 @@ describe.skipIf(!DB_URL)('service remediation (base de données)', () => {
       expect(logs.some((l) => l.obj.event === 'ip_unblocked')).toBe(true);
     });
 
+    it('un opérateur peut lever un blocage manuellement avant son échéance', async () => {
+      const res = await post(report());
+      await settled(res.body.id);
+      expect(readFileSync(DENYLIST, 'utf8')).toContain('deny 203.0.113.9;');
+
+      const block = await prisma.ipBlock.findFirstOrThrow();
+      const del = await request(app)
+        .delete(`/v1/blocks/${block.id}`)
+        .set('Authorization', await operator());
+      expect(del.status).toBe(204);
+
+      expect(readFileSync(DENYLIST, 'utf8')).not.toContain('203.0.113.9');
+      expect((await prisma.ipBlock.findFirstOrThrow()).releasedAt).not.toBeNull();
+      expect(logs.some((l) => l.obj.event === 'ip_unblocked_manually')).toBe(true);
+    });
+
+    it('refuse de lever un blocage déjà levé ou inexistant', async () => {
+      const res = await post(report());
+      await settled(res.body.id);
+      const block = await prisma.ipBlock.findFirstOrThrow();
+
+      const first = await request(app)
+        .delete(`/v1/blocks/${block.id}`)
+        .set('Authorization', await operator());
+      expect(first.status).toBe(204);
+
+      const second = await request(app)
+        .delete(`/v1/blocks/${block.id}`)
+        .set('Authorization', await operator());
+      expect(second.status).toBe(404);
+
+      const unknown = await request(app)
+        .delete('/v1/blocks/00000000-0000-4000-8000-000000000000')
+        .set('Authorization', await operator());
+      expect(unknown.status).toBe(404);
+    });
+
+    it('réserve la levée manuelle aux opérateurs (pas au dashboard)', async () => {
+      const res = await post(report());
+      await settled(res.body.id);
+      const block = await prisma.ipBlock.findFirstOrThrow();
+
+      const dashboard = await as('svc:svc-dashboard', ['svc:dashboard']);
+      const del = await request(app)
+        .delete(`/v1/blocks/${block.id}`)
+        .set('Authorization', dashboard);
+      expect(del.status).toBe(403);
+      expect(readFileSync(DENYLIST, 'utf8')).toContain('deny 203.0.113.9;');
+    });
+
     it('republie la liste depuis la base (reprise après redémarrage)', async () => {
       const res = await post(report());
       await settled(res.body.id);

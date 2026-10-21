@@ -104,6 +104,7 @@ async function request<T>(
     const problem = (await res.json().catch(() => ({}))) as { title?: string; detail?: string };
     throw new ApiError(res.status, problem.title ?? 'Erreur', problem.detail);
   }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -119,6 +120,8 @@ export const remediationApi = {
   incident: (id: string) => request<Incident>('/remediation', `/v1/incidents/${id}`),
   services: () => request<ServiceStatus[]>('/remediation', '/v1/services'),
   blocks: () => request<IpBlock[]>('/remediation', '/v1/blocks'),
+  unblock: (id: string) =>
+    request<void>('/remediation', `/v1/blocks/${id}`, { method: 'DELETE' }),
   playbooks: () => request<Playbook[]>('/remediation', '/v1/playbooks'),
 };
 

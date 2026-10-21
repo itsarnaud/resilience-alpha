@@ -11,5 +11,6 @@ router.use(requireRole('operator', 'svc:dashboard'));
 router.get('/playbooks', SupervisionController.playbooks);
 router.get('/services', SupervisionController.services);
 router.get('/blocks', SupervisionController.blocks);
+router.delete('/blocks/:id', requireRole('operator'), SupervisionController.unblock);
 
 export default router;

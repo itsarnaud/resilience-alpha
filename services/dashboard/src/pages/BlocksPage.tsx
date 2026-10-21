@@ -1,12 +1,28 @@
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { Alert, Card } from '../components/ui';
 import { useLoad } from '../lib/useLoad';
-import { remediationApi } from '../lib/api';
+import { ApiError, remediationApi } from '../lib/api';
 
 const date = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'medium' });
 
 export default function BlocksPage() {
   const { data, error, loading, reload } = useLoad(remediationApi.blocks);
+  const [unblocking, setUnblocking] = useState<string | null>(null);
+  const [unblockError, setUnblockError] = useState<ApiError | null>(null);
+
+  async function unblock(id: string) {
+    setUnblocking(id);
+    setUnblockError(null);
+    try {
+      await remediationApi.unblock(id);
+      await reload();
+    } catch (err) {
+      setUnblockError(err instanceof ApiError ? err : new ApiError(0, 'Erreur inattendue'));
+    } finally {
+      setUnblocking(null);
+    }
+  }
 
   return (
     <>
@@ -17,6 +33,7 @@ export default function BlocksPage() {
         </button>
       </div>
       {error && <Alert kind="error">{error.detail ?? error.title}</Alert>}
+      {unblockError && <Alert kind="error">{unblockError.detail ?? unblockError.title}</Alert>}
       {loading && !data && <p className="text-sm text-slate-500">Chargement…</p>}
       {data?.length === 0 && <Alert kind="info">Aucune IP bloquée actuellement.</Alert>}
       <Card>
@@ -29,7 +46,17 @@ export default function BlocksPage() {
                   voir l'incident
                 </Link>
               </div>
-              <p className="text-xs text-slate-500">jusqu'à {date.format(new Date(b.expires_at))}</p>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-slate-500">jusqu'à {date.format(new Date(b.expires_at))}</p>
+                <button
+                  type="button"
+                  disabled={unblocking === b.id}
+                  onClick={() => void unblock(b.id)}
+                  className="text-xs text-red-700 underline disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {unblocking === b.id ? 'Déblocage…' : 'Débloquer'}
+                </button>
+              </div>
             </li>
           ))}
         </ul>

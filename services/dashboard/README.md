@@ -12,7 +12,7 @@ React 19, TypeScript, Vite, Tailwind CSS 4, React Router. Réservé aux comptes 
 | Vue d'ensemble | `/`              | Services supervisés (en ligne ou non, dernière transaction de test), LED. |
 | Incidents      | `/incidents`     | Liste en temps réel, état de chacun.                                      |
 | Détail         | `/incidents/:id` | Fiche complète et chronologie étape par étape, en direct.                 |
-| IP bloquées    | `/blocages`      | Blocages actifs dans le WAF, avec lien vers l'incident.                   |
+| IP bloquées    | `/blocages`      | Blocages actifs dans le WAF, avec lien vers l'incident et bouton pour lever un blocage avant son échéance. |
 | Assistant      | `/assistant`     | Question en langage naturel sur le projet, réponse avec sources citées (RAG, IA, `ml/ai-runtime`). |
 
 ## Comment il parle aux services
@@ -72,3 +72,5 @@ Le conteneur `dashboard` de [`infra/compose/docker-compose.dev.yml`](../../infra
 Testé dans un vrai navigateur avec `auth`, `api` et `remediation`, à travers le WAF : connexion opérateur, un incident envoyé par un vrai jeton `svc:detector` apparaît sur la page Incidents sans recharger la page, sa chronologie complète (réception, validation de l'IP, blocage, vérification, transaction de test) s'affiche sur sa fiche, et il figure dans les IP bloquées.
 
 **Pas encore vérifié :** la page Assistant (code et tests écrits, mais aucun conteneur `ml/ai-runtime` n'est encore lancé dans ce dépôt pour la tester en vrai).
+
+**Limite connue avec le WAF (en attente côté cyber) :** le bouton « Débloquer » (`DELETE /v1/blocks/:id`) fonctionne en direct sur `remediation`, mais la règle CRS `911100` (méthodes autorisées : `GET HEAD POST OPTIONS`) le bloque avec un `403` à travers le WAF. Signalé le 2026-10-21.
