@@ -11,7 +11,7 @@ Six services et un package partagé :
 | remédiation   | `services/remediation` | Reçoit les incidents, exécute le bon playbook, vérifie la reprise par une transaction de test, garde l'historique.                                                                                                                                     |
 | front         | `services/front`       | Interface client : connexion, virement, historique.                                                                                                                                                                                                    |
 | dashboard     | `services/dashboard`   | État des services, incidents, avancement de la reprise.                                                                                                                                                                                                |
-| back-office   | `services/backoffice`  | Interface d'administration du SI de paiement, distincte du dashboard : connexion renforcée (identifiant, photo du visage, mot de passe) et gestion des habilitations (utilisateurs, rôles, visages). Le reste de son contenu est à préciser.           |
+| back-office   | `services/backoffice`  | Interface d'administration du SI de paiement, distincte du dashboard : connexion renforcée (identifiant, photo du visage, mot de passe) et gestion des habilitations (utilisateurs, rôles, visages).                                                   |
 | shared        | `packages/shared`      | Schémas, types, middleware JWT, logger, client HTTP typé, utilisés par les services.                                                                                                                                                                   |
 
 Chaque service tourne dans son propre conteneur, avec sa propre base PostgreSQL 16 dans un conteneur séparé. Aucun service n'a accès à la base d'un autre. La base de la remédiation conserve l'historique des incidents si le moteur redémarre.
@@ -390,7 +390,6 @@ Ce que les autres attendent de nous, et ce qu'on attend d'eux :
 
 **À décider côté DEV**
 
-- Contenu du back-office au-delà de la connexion et des habilitations (consultation des comptes clients, des transactions ?).
 - Le dashboard (rôle `operator`) doit-il aussi passer par la vérification du visage ?
 - Capture de la photo : navigateur de l'hôte (proposé) ou programme natif ?
 - Verrouillage : un visage refusé et un mot de passe refusé comptent-ils ensemble ? Le blocage vise-t-il l'identifiant ? Que signifie « etc. » ?
@@ -404,16 +403,16 @@ Ce que les autres attendent de nous, et ce qu'on attend d'eux :
 
 ## 11. Plan de développement
 
-| Priorité | À livrer                                                                                                                            | C'est fini quand                                                                   |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 1        | `packages/shared` : types, schémas, middleware JWT, logger                                                                          | les services peuvent l'importer                                                    |
-| 2        | `auth` : inscription, connexion, JWT, jetons de service, journal des échecs                                                         | un `curl` de connexion marche et chaque échec laisse une trace avec l'IP           |
-| 3        | `api` : comptes, virements, règle anti-fraude, `/readyz`, `/metrics`                                                                | une transaction de test réussit et un virement externe suspect est refusé          |
-| 4        | `remediation` : incidents, deux playbooks, transaction de test, flux temps réel                                                     | un incident simulé est résolu avec preuve                                          |
-| 5        | `auth` : connexion du back-office en étapes, verrouillage, publication de la LED sur MQTT, visage simulé (consigne additionnelle 1) | **fait** : parcours complet testé avec un faux service de visage et un vrai broker |
-| 6        | `dashboard` : services, incidents, chronologie                                                                                      | on voit l'état avant, pendant et après                                             |
-| 7        | `backoffice` : page de connexion (identifiant, photo, mot de passe), administration des habilitations                               | on se connecte avec le visage et un `admin` gère les comptes                       |
-| 8        | `front` : connexion, virement, historique                                                                                           | il génère du trafic normal                                                         |
-| 9        | `auth` : habilitations (comptes, rôles, enregistrement des visages)                                                                 | un `admin` gère les comptes depuis le back-office                                  |
+| Priorité | À livrer                                                                                                                            | C'est fini quand                                                                                              |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 1        | `packages/shared` : types, schémas, middleware JWT, logger                                                                          | les services peuvent l'importer                                                                               |
+| 2        | `auth` : inscription, connexion, JWT, jetons de service, journal des échecs                                                         | un `curl` de connexion marche et chaque échec laisse une trace avec l'IP                                      |
+| 3        | `api` : comptes, virements, règle anti-fraude, `/readyz`, `/metrics`                                                                | une transaction de test réussit et un virement externe suspect est refusé                                     |
+| 4        | `remediation` : incidents, deux playbooks, transaction de test, flux temps réel                                                     | un incident simulé est résolu avec preuve                                                                     |
+| 5        | `auth` : connexion du back-office en étapes, verrouillage, publication de la LED sur MQTT, visage simulé (consigne additionnelle 1) | **fait** : parcours complet testé avec un faux service de visage et un vrai broker                            |
+| 6        | `dashboard` : services, incidents, chronologie                                                                                      | **fait** : testé en direct (connexion, incident reçu en temps réel sans recharger, chronologie, IP bloquées)  |
+| 7        | `backoffice` : page de connexion (identifiant, photo, mot de passe), administration des habilitations                               | **fait** : testé en direct (connexion avec une vraie photo, habilitations, enrôlement d'un visage, déblocage) |
+| 8        | `front` : connexion, virement, historique                                                                                           | il génère du trafic normal                                                                                    |
+| 9        | `auth` : habilitations (comptes, rôles, enregistrement des visages)                                                                 | un `admin` gère les comptes depuis le back-office                                                             |
 
 La consigne additionnelle ajoute du travail à un seul développeur. La remédiation reste la priorité : c'est elle qui détermine l'axe 1 de la grille, et une reprise qui ne marche pas pendant la démo vaut zéro.
