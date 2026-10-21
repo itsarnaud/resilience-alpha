@@ -1,282 +1,187 @@
-Analyse de risques EBIOS RM — Plateforme de paiement
+# Analyse de risques EBIOS RM — RESILIENCE-ALPHA
 
-**Version :** 1.0
-**Périmètre :** Plateforme de paiement conteneurisée composée de dix services
-**Scénario principal :** Brute force sur l'API d'authentification, tentative de virement frauduleux et remédiation automatique.
+**Version :** 2.0 — mise à jour selon le contexte technique et le PCA/PRA  
+**Périmètre :** laboratoire pédagogique de paiement fictif, données synthétiques, trois piles Docker Compose sur un seul PC Hôte Windows/Docker Desktop.  
+**Statut :** cotations de travail ; les niveaux de vraisemblance et les risques résiduels restent à valider par les tests.
 
-## Objectif de l'étude
+## Sommaire
 
-Cette analyse vise à identifier les risques cyber susceptibles d'affecter la plateforme de paiement fictive, à évaluer leurs conséquences et à définir des mesures de sécurité adaptées. L'étude se concentre sur la compromission des comptes utilisateurs, l'intégrité des transactions, la disponibilité de l'authentification et la capacité du système à détecter et contenir un incident.
+- [Atelier 1 — Cadrage et socle de sécurité](#atelier-1--cadrage-et-socle-de-sécurité)
+- [Atelier 2 — Sources de risque](#atelier-2--sources-de-risque)
+- [Atelier 3 — Scénarios stratégiques](#atelier-3--scénarios-stratégiques)
+- [Atelier 4 — Scénarios opérationnels et cotation](#atelier-4--scénarios-opérationnels-et-cotation)
+- [Atelier 5 — Traitement du risque](#atelier-5--traitement-du-risque)
+- [À retenir](#à-retenir)
+- [Références](#références)
 
-La méthode EBIOS Risk Manager est organisée en cinq ateliers complémentaires. L'analyse présentée ici constitue une étude préliminaire adaptée au projet : les cotations sont proposées à titre indicatif et devront être confirmées à partir de l'architecture réelle, des contrôles effectivement déployés et des résultats des tests.
+## Atelier 1 — Cadrage et socle de sécurité
 
-# Atelier 1 — Cadrage et socle de sécurité
+### 1.1 Périmètre
 
-## 1.1. Périmètre de l'étude
+La plateforme simule des paiements avec des données fictives. Elle comprend trois piles Compose : **infra** (Prometheus, Loki, Grafana, MQTT, Ansible), **dev** (authentification, API, remédiation, interfaces React, reconnaissance faciale, détecteur de journaux, bases PostgreSQL) et **cyber** (WAF Nginx + ModSecurity). Le WAF constitue le point d'entrée applicatif unique. La supervision est exposée sur `:8081` et le back-office sur `:8082`.
 
-La plateforme de paiement est constituée de dix services conteneurisés permettant aux utilisateurs de s'authentifier et d'effectuer des transactions fictives. L'étude porte prioritairement sur l'API d'authentification, le service de transactions, le WAF, le mécanisme de détection par machine learning (ML), le moteur de remédiation et les composants de journalisation et de supervision.
+Le PC attaquant est distinct du PC Hôte et relié au point d'accès Wi-Fi du groupe, dans le cadre isolé du workshop. Aucun système ni aucune donnée réels ne sont dans le périmètre.
 
-Le scénario d'attaque est exécuté depuis un PC attaquant distinct, dans un environnement autorisé et isolé. Aucun système extérieur au laboratoire ni aucune donnée bancaire réelle ne doivent être concernés.
+### 1.2 Valeurs métier et biens supports
 
-La cartographie définitive devra préciser les dix services, leurs responsabilités, leurs communications et leurs dépendances. À ce stade, seuls les composants identifiés dans le périmètre sont retenus ; les autres services restent à inventorier.
+| Valeur métier | Besoin de sécurité | Biens supports principaux |
+|---|---|---|
+| Authentification | Confidentialité des identifiants et accès réservé aux utilisateurs autorisés | `auth`, `db-auth`, front, WAF, clé JWT |
+| Transactions fictives | Intégrité et autorisation de chaque opération | `api`, `db-paiement`, WAF |
+| Disponibilité du service | Maintien ou rétablissement des fonctions critiques | WAF, `auth`, `api`, bases et répliques |
+| Continuité et réponse à incident | Détecter, contenir, vérifier et reprendre | `log-detector`, `remediation`, Loki, Prometheus, Grafana, Ansible, sauvegardes |
+| Administration | Accès réservé aux personnes autorisées | Back-office, reconnaissance faciale, mot de passe, MQTT, ESP8266 |
 
-## 1.2. Valeurs métier et besoins de sécurité
+### 1.3 Événements redoutés
 
-Les valeurs métier correspondent aux activités et informations dont la compromission aurait un impact sur le fonctionnement de la plateforme.
+Échelle de gravité de travail de 1 (faible) à 4 (critique), à valider par l'équipe. Elle est adaptée au laboratoire et n'est pas une échelle officielle de l'ANSSI.
 
+| ID | Événement redouté | Conséquence | Gravité initiale |
+|---|---|---|---:|
+| ER1 | Accès frauduleux à un compte utilisateur | Utilisation non autorisée d'un compte fictif | 3 — Majeur |
+| ER2 | Virement fictif non autorisé exécuté | Atteinte à l'intégrité des transactions | 4 — Critique |
+| ER3 | Indisponibilité de l'authentification ou du service | Utilisateurs légitimes empêchés de se connecter ou d'effectuer une opération | 2 — Modéré |
+| ER4 | Journaux absents ou altérés | Incident difficile à détecter, expliquer ou reconstituer | 3 — Majeur |
+| ER5 | Contournement de l'identification biométrique du back-office | Accès administratif non autorisé | 4 — Critique |
+| ER6 | Rejet biométrique injustifié d'un utilisateur autorisé | Blocage temporaire de l'accès au back-office | 2 — Modéré |
+| ER7 | Modification non autorisée des habilitations ou des fonctions d'administration | Privilèges excessifs et actions non autorisées | 4 — Critique |
+| ER8 | État de la LED ESP8266 trompeur ou communication MQTT détournée | Indication erronée de l'état d'authentification | 2 — Modéré |
 
-| Valeur métier                    | Besoin de sécurité                                                                  |
-| --------------------------------- | ------------------------------------------------------------------------------------- |
-| Authentification des utilisateurs | Empêcher les accès non autorisés aux comptes.                                      |
-| Réalisation des transactions     | Garantir que les opérations sont autorisées, intègres et correctement exécutées. |
-| Disponibilité de la plateforme   | Permettre aux utilisateurs légitimes d'utiliser le service.                          |
-| Continuité de l'activité        | Maintenir ou rétablir le fonctionnement après un incident.                          |
+**Précision :** ER8 concerne l'indicateur. La LED ne doit jamais constituer une preuve ni un mécanisme d'autorisation. L'accès réel doit dépendre des contrôles du back-office.
 
-Les journaux de sécurité constituent des biens supports contribuant à la détection, à l'investigation et à la réponse aux incidents. Ils ne sont pas assimilés ici à une valeur métier distincte.
+### 1.4 Socle de sécurité à vérifier
 
-## 1.3. Biens supports
-
-Les biens supports identifiés sont le front Web, l'API d'authentification, le service de transactions, le WAF, le modèle ML, le moteur de remédiation, les composants de collecte des événements, les outils de supervision et les mécanismes de gestion des secrets.
-
-Leur criticité dépend de leur rôle dans les scénarios de risque. L'API d'authentification et le service de transactions sont particulièrement sensibles, car leur compromission peut conduire à un accès non autorisé ou à une opération frauduleuse. Le moteur de remédiation est également critique : une mauvaise configuration ou une compromission de ce composant pourrait permettre un blocage abusif ou empêcher l'application des mesures de protection.
-
-## 1.4. Échelle de gravité
-
-Une échelle commune doit être utilisée pour justifier les niveaux attribués aux événements redoutés. La proposition suivante est à valider par l'équipe.
-
-
-| Niveau        | Signification                                        | Exemple d'impact                                                    |
-| ------------- | ---------------------------------------------------- | ------------------------------------------------------------------- |
-| 1 — Faible   | Impact limité et rapidement réversible             | Perturbation mineure sans conséquence sur les transactions.        |
-| 2 — Modéré | Dégradation temporaire d'une fonction               | Indisponibilité courte de l'authentification.                      |
-| 3 — Majeur   | Atteinte importante à une fonction métier          | Compromission d'un compte ou interruption significative du service. |
-| 4 — Critique | Atteinte grave à l'intégrité ou à la continuité | Exécution d'un virement non autorisé ou indisponibilité majeure. |
-
-Ces niveaux sont des critères de travail et non une échelle officielle imposée par EBIOS RM. Ils devront être adaptés aux objectifs et aux exigences du projet.
-
-## 1.5. Événements redoutés
-
-
-| ID  | Événement redouté                       | Conséquence                                                               | Gravité initiale proposée |
-| --- | ------------------------------------------ | -------------------------------------------------------------------------- | --------------------------- |
-| ER1 | Accès frauduleux à un compte utilisateur | Utilisation non autorisée du compte et risque d'opérations frauduleuses. | 3 — Majeur                 |
-| ER2 | Exécution d'un virement non autorisé     | Atteinte à l'intégrité des transactions et perte financière simulée.  | 4 — Critique               |
-| ER3 | Indisponibilité de l'authentification     | Impossibilité pour les utilisateurs légitimes de se connecter.           | 2 — Modéré               |
-| ER4 | Altération ou absence des journaux        | Difficulté à détecter, analyser et reconstituer un incident.            | 3 — Majeur                 |
-
-Les cotations proposées devront être validées à partir des conséquences réellement possibles dans l'environnement. Les niveaux de gravité ne sont pas diminués automatiquement par la présence d'un WAF ou d'un modèle ML : ces mesures influencent principalement la vraisemblance ou la maîtrise du scénario.
-
-## 1.6. Socle de sécurité
-
-Le socle de sécurité regroupe les exigences minimales à vérifier indépendamment du scénario d'attaque.
-
-
-| Domaine                       | Exigence à vérifier                                                                                           |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Authentification              | Les tentatives sont contrôlées et les échecs sont journalisés.                                              |
-| Autorisation des transactions | Chaque virement est vérifié côté serveur ; l'accès à un compte ne suffit pas à autoriser une opération. |
-| Protection réseau            | Le WAF protège l'application et n'expose que les interfaces nécessaires.                                      |
-| Gestion des secrets           | Les secrets ne sont pas stockés en clair dans le code ou les journaux.                                         |
-| Contrôle d'accès            | Les composants et interfaces d'administration disposent de permissions minimales.                               |
-| Journalisation                | Les événements sont horodatés, corrélables et exploitables.                                                 |
-| Supervision                   | Les métriques et les événements nécessaires au diagnostic sont collectés.                                  |
-| Remédiation                  | Les actions automatiques sont autorisées, limitées et journalisées.                                          |
-| Continuité                   | Le fonctionnement peut être vérifié après un incident et le retour à la normale contrôlé.                |
-
-Le socle devra être évalué en distinguant les exigences déjà satisfaites, celles partiellement satisfaites et celles restant à implémenter. Les écarts constatés alimenteront le plan de traitement de l'atelier 5.
-
-# Atelier 2 — Sources de risque
-
-## 2.1. Sources de risque retenues
-
-La source de risque principale est un cybercriminel cherchant à compromettre un compte utilisateur pour réaliser une opération frauduleuse. Le brute force constitue un mode opératoire possible, mais son succès dépend notamment de la robustesse de l'authentification et de l'efficacité des protections.
-
-Une seconde source de risque est un attaquant cherchant à perturber le fonctionnement de la plateforme en multipliant les tentatives de connexion. Cet objectif vise principalement la disponibilité de l'authentification.
-
-Une troisième hypothèse concerne un attaquant cherchant à contourner ou à détourner le mécanisme de remédiation afin de poursuivre son activité ou de provoquer un blocage abusif. Cette hypothèse concerne directement les interfaces privilégiées et les droits accordés au moteur de remédiation.
-
-Ces profils sont des hypothèses de travail. Leurs motivations, ressources et capacités ne sont pas connues à ce stade et ne doivent pas être présentées comme des faits établis.
-
-## 2.2. Couples source de risque / objectif visé
-
-
-| ID      | Source de risque                                | Objectif visé                                                                   | Pertinence pour le projet                                                                 |
-| ------- | ----------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| SR1/OV1 | Cybercriminel                                   | Obtenir un accès non autorisé à un compte pour tenter un virement frauduleux. | Très forte : correspond au scénario principal.                                          |
-| SR1/OV2 | Cybercriminel                                   | Perturber la disponibilité de l'authentification.                               | Forte : correspond à un effet possible des tentatives répétées.                       |
-| SR2/OV3 | Attaquant ciblant les mécanismes de sécurité | Contourner ou détourner la remédiation automatique.                            | À étudier : dépend de l'architecture et de l'exposition des interfaces privilégiées. |
-
-La priorité est donnée au couple SR1/OV1, car il est directement lié à l'intégrité des transactions. SR1/OV2 est conservé pour examiner les conséquences sur la disponibilité. SR2/OV3 sera approfondi si le moteur de remédiation expose une interface ou des privilèges pouvant être détournés.
-
-Une caractérisation plus complète des sources de risque devra préciser, pour chaque couple retenu, les ressources nécessaires, les opportunités offertes par l'environnement et les difficultés auxquelles l'attaquant serait confronté.
-
-# Atelier 3 — Scénarios stratégiques
-
-## 3.1. Écosystème et dépendances
-
-La plateforme dépend de plusieurs composants qui concourent à l'authentification, au traitement des transactions, à la détection et à la réponse aux incidents.
-
-Le front Web constitue le point d'entrée utilisateur. Les requêtes sont filtrées par le WAF avant d'atteindre les services applicatifs. L'API d'authentification vérifie les identifiants et produit les événements nécessaires à la détection. Le service de transactions doit contrôler les autorisations indépendamment du statut de connexion. Le modèle ML analyse les événements et fournit un résultat exploitable par le mécanisme de remédiation. Celui-ci transmet une action contrôlée au WAF. Enfin, les composants de journalisation et de supervision permettent de vérifier les événements et les effets de la remédiation.
-
-Cette description représente l'architecture fonctionnelle visée. Les flux exacts, les protocoles, les dépendances entre conteneurs et les points de contrôle devront être confirmés à partir de l'architecture déployée.
-
-## 3.2. Cartographie simplifiée des flux
-
-```
-PC attaquant autorisé
-        |
-        v
-     Front Web
-        |
-        v
-       WAF <----------------------+
-        |                         |
-        v                         |
- API d'authentification           |
-        |                         |
-        +--> Événements --> Modèle ML
-        |                         |
-        v                         v
-Service de transactions     Moteur de remédiation
-                                  |
-                                  +--> Action contrôlée sur le WAF
-
-Tous les composants concernés
-        |
-        v
-Journalisation et supervision
-```
-
-Ce schéma est fonctionnel et non une représentation définitive des flux réseau. Il devra être ajusté si le modèle ML ou le moteur de remédiation communique directement avec d'autres services.
-
-## 3.3. Scénario stratégique principal
-
-Un attaquant externe cherche à obtenir un accès non autorisé à un compte utilisateur afin d'initier un virement frauduleux. Il cible l'authentification accessible depuis le front Web et tente de contourner les contrôles d'accès par des tentatives répétées de connexion. Si l'authentification est compromise et que le service de transactions ne vérifie pas correctement les autorisations, l'attaquant pourrait initier une opération non autorisée.
-
-L'événement redouté principal est l'exécution d'un virement non autorisé (ER2). L'accès frauduleux au compte (ER1) constitue une étape intermédiaire possible. Le brute force est un mode opératoire envisagé, et non une garantie de compromission.
-
-## 3.4. Scénarios stratégiques secondaires
-
-Un premier scénario secondaire concerne la disponibilité : la multiplication des tentatives de connexion pourrait provoquer une dégradation du service ou empêcher les utilisateurs légitimes de s'authentifier.
-
-Un second scénario concerne la chaîne de sécurité : si le moteur de remédiation ou son interface de commande est insuffisamment protégé, un attaquant pourrait empêcher le blocage, modifier les actions autorisées ou provoquer un blocage excessif.
-
-Ces scénarios doivent être retenus ou écartés en fonction de l'architecture réelle, de l'exposition des composants et des contrôles observés. Leur présence dans cette analyse ne signifie pas qu'une vulnérabilité correspondante a déjà été constatée.
-
-# Atelier 4 — Scénarios opérationnels
-
-## 4.1. Scénario opérationnel principal : brute force et tentative de virement
-
-Le scénario commence par la vérification du bon fonctionnement de la plateforme et de la collecte des événements. Depuis le PC attaquant autorisé, une série de tentatives de connexion échouées est effectuée sur un compte fictif afin de générer un comportement anormal. Le modèle ML analyse les événements collectés et contribue à la détection de cette activité.
-
-Dans le scénario de démonstration, l'attaquant doit ensuite disposer d'un accès contrôlé au compte fictif pour tenter d'initier un virement vers un bénéficiaire externe fictif. Cette étape doit être explicitement définie : un brute force uniquement composé d'échecs de connexion ne permet pas, à lui seul, d'obtenir un accès au compte. L'opération de virement doit rester bloquée par les contrôles d'autorisation de la plateforme si elle n'est pas légitime.
-
-Lorsqu'une activité malveillante est identifiée, le mécanisme de remédiation déclenche automatiquement une action sur le WAF afin de bloquer temporairement la source des requêtes. L'application de la règle, le rejet des requêtes et l'expiration du blocage doivent être vérifiables dans les journaux. Enfin, le retour à la normale est contrôlé au moyen d'une authentification légitime et d'une transaction fictive autorisée.
-
-Le scénario de test doit distinguer les résultats suivants : détection du comportement anormal, blocage de la source par le WAF et refus du virement non autorisé. Ces résultats correspondent à des contrôles différents et ne doivent pas être confondus.
-
-## 4.2. Scénario opérationnel secondaire : perturbation de l'authentification
-
-Un attaquant multiplie les tentatives de connexion afin de perturber le service d'authentification. Les événements et métriques permettent d'observer l'évolution du volume de requêtes, des échecs et de la disponibilité du service. Les mécanismes de limitation et le WAF doivent réduire l'impact de ces requêtes sans provoquer un blocage excessif des utilisateurs légitimes.
-
-Ce scénario sera testé uniquement dans les limites autorisées du laboratoire. Il ne doit pas être assimilé automatiquement à un déni de service réussi : une perturbation effective doit être observée pour conclure à un impact sur la disponibilité.
-
-## 4.3. Scénario opérationnel secondaire : défaillance de la remédiation
-
-Une erreur de configuration, une indisponibilité du WAF ou une défaillance de communication entre le modèle ML et le moteur de remédiation peut empêcher l'application du blocage. Une interface de remédiation insuffisamment protégée peut également permettre une action non autorisée.
-
-L'analyse doit vérifier que les demandes de blocage sont authentifiées, limitées à des actions autorisées et journalisées. Le système doit distinguer une décision de blocage demandée d'une action effectivement appliquée. En cas d'échec, l'incident doit être visible et une procédure de repli contrôlée doit être définie.
-
-## 4.4. Traces nécessaires à l'analyse
-
-Les événements de sécurité doivent permettre de reconstituer la chronologie de l'incident. Ils comprennent l'horodatage, le type d'événement, le compte fictif ciblé, la source identifiée et le résultat de chaque tentative. Ils doivent également conserver le résultat de la détection ML, la décision de remédiation, l'action demandée au WAF et le résultat observé.
-
-Aucun mot de passe, jeton d'authentification ou secret ne doit être enregistré dans les journaux. L'adresse source doit être déterminée selon une configuration réseau maîtrisée, notamment lorsque des proxies sont utilisés.
-
-Les métriques Prometheus contribuent à la supervision, mais elles ne remplacent pas nécessairement les journaux applicatifs et les événements de sécurité. La collecte et la corrélation des événements doivent donc être vérifiées séparément.
-
-## 4.5. Échelle de vraisemblance
-
-Une échelle de vraisemblance doit être définie afin de comparer les scénarios opérationnels. La proposition suivante est à valider.
-
-
-| Niveau              | Signification                                   | Critère indicatif                                                                     |
-| ------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------- |
-| 1 — Faible         | Scénario difficile à réaliser                | Plusieurs contrôles indépendants rendent le chemin d'attaque peu accessible.         |
-| 2 — Modérée      | Scénario réalisable sous certaines conditions | L'attaque nécessite une opportunité ou une faiblesse spécifique.                    |
-| 3 — Élevée       | Scénario relativement accessible               | L'exposition et les faiblesses identifiées facilitent plusieurs étapes de l'attaque. |
-| 4 — Très élevée | Scénario particulièrement facile à réaliser | Les contrôles sont absents ou inefficaces et les conditions d'attaque sont réunies.  |
-
-La vraisemblance doit être estimée à partir des caractéristiques de l'environnement, des vulnérabilités identifiées et de l'efficacité des mesures de sécurité. Le fait qu'un scénario soit simulé en laboratoire ne suffit pas à lui attribuer une vraisemblance élevée.
-
-## 4.6. Synthèse initiale des risques
-
-À ce stade, les niveaux de vraisemblance ne sont pas encore cotés, car les tests et la validation de l'architecture n'ont pas été réalisés.
-
-
-| ID | Scénario de risque                                                            | Événement redouté           | Gravité initiale      | Vraisemblance initiale |
-| -- | ------------------------------------------------------------------------------ | ------------------------------ | ---------------------- | ---------------------- |
-| R1 | Brute force suivi d'une compromission de compte et d'une tentative de virement | ER1 et ER2                     | 4 — Critique pour ER2 | À évaluer            |
-| R2 | Multiplication des tentatives perturbant l'authentification                    | ER3                            | 2 — Modéré          | À évaluer            |
-| R3 | Échec ou détournement du mécanisme de remédiation                          | ER1, ER2 ou ER3 selon l'impact | À évaluer            | À évaluer            |
-| R4 | Absence ou altération des journaux pendant l'incident                         | ER4                            | 3 — Majeur            | À évaluer            |
-
-La cotation définitive devra être réalisée après l'analyse des contrôles existants et la validation des scénarios. Aucun niveau de risque global n'est attribué ici sans combinaison explicite de la gravité et de la vraisemblance.
-
-# Atelier 5 — Traitement du risque
-
-## 5.1. Stratégie de traitement
-
-La stratégie consiste à réduire les risques prioritaires par des mesures préventives, détectives et correctives. La priorité est donnée à la protection des transactions et des comptes, puis à la disponibilité de l'authentification, à la fiabilité de la remédiation et à l'exploitabilité des journaux.
-
-Les mesures retenues doivent être reliées aux risques identifiés. Leur efficacité doit être démontrée par des tests plutôt que supposée du seul fait de leur présence dans l'architecture.
-
-## 5.2. Plan de traitement
-
-
-| ID | Risque traité | Mesure envisagée                                                                                                     | Responsable proposé              | Critère de validation                                                                             |
-| -- | -------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------- |
-| M1 | R1             | Limiter les tentatives d'authentification et détecter les comportements anormaux par ML.                             | Développement et IA/Data         | Le comportement anormal est détecté à partir des événements du scénario.                     |
-| M2 | R1             | Vérifier côté serveur les droits et l'autorisation de chaque virement.                                             | Développement                    | Un virement non autorisé est refusé, même si un compte est compromis.                           |
-| M3 | R1, R2         | Appliquer un blocage temporaire via le WAF lorsque la décision de remédiation est justifiée.                       | Cybersécurité et infrastructure | La règle est appliquée, les requêtes concernées sont rejetées et l'expiration est vérifiée. |
-| M4 | R3             | Protéger l'interface de remédiation par une authentification, des permissions minimales et des actions autorisées. | Cybersécurité et infrastructure | Une commande non autorisée est refusée et journalisée.                                          |
-| M5 | R4             | Centraliser et corréler les événements de sécurité nécessaires à l'analyse.                                    | Infrastructure et développement  | La chronologie de l'incident peut être reconstituée à partir des traces.                        |
-| M6 | R2             | Mettre en place une limitation des requêtes et surveiller les effets sur le service.                                 | Développement et infrastructure  | Les tentatives répétées sont limitées sans dégradation excessive du service.                  |
-| M7 | R3, R4         | Définir une procédure de contrôle en cas d'échec de la remédiation ou de la collecte.                            | Cybersécurité et infrastructure | L'échec est visible et une procédure de repli documentée est testée.                           |
-| M8 | R1 à R4       | Réaliser des tests de retour à la normale et conserver les preuves.                                                 | Équipe projet                    | L'authentification et une transaction fictive autorisée fonctionnent après le test.              |
-
-Les responsables proposés correspondent aux rôles de l'équipe et devront être confirmés. Les échéances seront fixées en fonction du planning du workshop.
-
-## 5.3. Évaluation du risque résiduel
-
-Le risque résiduel correspond au risque restant après la mise en œuvre et la vérification des mesures de traitement. Il ne peut pas être déterminé de manière fiable avant les tests.
-
-
-| ID | Risque initial                                 | Mesures appliquées | Résultat des tests | Risque résiduel |
-| -- | ---------------------------------------------- | ------------------- | ------------------- | ---------------- |
-| R1 | À coter après validation de la vraisemblance | M1, M2, M3          | À renseigner       | À réévaluer   |
-| R2 | À coter après validation de la vraisemblance | M3, M6              | À renseigner       | À réévaluer   |
-| R3 | À coter après validation de la vraisemblance | M4, M7              | À renseigner       | À réévaluer   |
-| R4 | À coter après validation de la vraisemblance | M5, M7              | À renseigner       | À réévaluer   |
-
-Après les tests, chaque risque résiduel devra être évalué selon la même méthode que le risque initial. La décision de l'accepter, de le tolérer sous contrôle ou d'engager des mesures complémentaires devra être justifiée. Dans le cadre du workshop, cette décision sera documentée par l'équipe, sans la présenter comme une acceptation formelle par une direction réelle.
-
-## 5.4. Suivi et amélioration continue
-
-Le suivi repose sur la vérification régulière des mesures de sécurité, la revue des événements, l'analyse des résultats de détection et la vérification de la bonne application des actions de remédiation. Toute modification importante de l'architecture, des règles WAF, du modèle ML ou des droits du moteur de remédiation doit conduire à réexaminer les scénarios concernés.
-
-Les indicateurs de suivi peuvent inclure la proportion d'événements correctement collectés, le résultat des tests de détection, la réussite des actions de blocage, les faux positifs observés et le succès des transactions de test après retour à la normale.
-
-# Synthèse des priorités
-
-La priorité principale est de garantir que les transactions ne peuvent pas être exécutées sans autorisation, indépendamment de la détection ML et du WAF. La deuxième priorité est de démontrer que les événements d'authentification sont correctement collectés, que le modèle ML contribue à la détection et que le blocage temporaire est réellement appliqué. La troisième priorité est de sécuriser le moteur de remédiation et de garantir la traçabilité des actions. Enfin, la continuité du service doit être vérifiée par un retour à la normale observable.
-
-Cette analyse doit être considérée comme un document évolutif. Les cotations, les chemins d'attaque et les risques résiduels seront actualisés lorsque l'architecture des dix services sera connue et que les tests auront fourni des résultats.
-
-# Références méthodologiques
-
-ANSSI, *EBIOS Risk Manager — Guide méthodologique*, version 1.5 : [https://cyber.gouv.fr/sites/default/files/document/20240901\_Guide-EBIOS-RM-V1.5.pdf](https://cyber.gouv.fr/sites/default/files/document/20240901_Guide-EBIOS-RM-V1.5.pdf)
-
-ANSSI, *La méthode EBIOS Risk Manager* : [https://cyber.gouv.fr/securisation/analyse-des-risques/methode-ebios-rm/](https://cyber.gouv.fr/securisation/analyse-des-risques/methode-ebios-rm/)
-
-Les échelles, tableaux et cotations proposés dans ce document constituent une adaptation de travail au projet, à partir des tableaux officiels de l'ANSSI.
+| Domaine | Exigence |
+|---|---|
+| Authentification et transactions | Chaque virement est autorisé côté serveur ; une connexion réussie ne suffit pas à autoriser une opération. |
+| Détection et WAF | Détecter les échecs répétés, appliquer le blocage prévu et vérifier son effet réel. |
+| Back-office et biométrie | Respecter la séquence identifiant → visage → mot de passe ; appliquer les règles de tentative et de temporisation. |
+| Habilitations | Appliquer le moindre privilège aux comptes et interfaces d'administration. |
+| Secrets | Protéger la clé JWT et les secrets hors du code et des journaux. |
+| Journaux et supervision | Conserver des événements exploitables et corrélables ; ne pas journaliser mots de passe ou jetons. |
+| Remédiation | Limiter les actions automatiques aux opérations autorisées ; tracer décision, action et résultat. |
+| MQTT / ESP8266 | Contrôler les échanges et ne pas utiliser l'état de la LED comme preuve d'autorisation. |
+| Continuité | Tester bascule, restauration et reconstruction ; distinguer mesures constatées et objectifs de reprise. |
+| Données biométriques | [à compléter — préciser les données biométriques réellement conservées, leur stockage et leur protection] |
+
+## Atelier 2 — Sources de risque
+
+Les profils ci-dessous sont des hypothèses de travail, pas des acteurs observés.
+
+| ID | Source de risque | Objectif visé | Événements concernés |
+|---|---|---|---|
+| SR1 / OV1 | Cybercriminel simulé | Compromettre un compte et tenter un virement non autorisé | ER1, ER2 |
+| SR1 / OV2 | Attaquant simulé | Perturber l'authentification par des tentatives répétées | ER3 |
+| SR2 / OV3 | Attaquant ciblant les mécanismes de sécurité | Empêcher, contourner ou détourner la remédiation | ER1, ER2, ER3, ER4 |
+| SR1 / OV4 | Attaquant ciblant le back-office | Contourner l'identification faciale ou obtenir un accès administratif | ER5, ER6, ER7 |
+| SR2 / OV5 | Attaquant ciblant les communications de contrôle | Manipuler les messages MQTT ou l'indication de la LED | ER8 |
+
+## Atelier 3 — Scénarios stratégiques
+
+### 3.1 Écosystème et dépendances
+
+Le WAF est le point d'entrée unique vers les routes applicatives. `auth` gère les connexions et alimente `login_attempts` ; `api` traite les opérations ; `log-detector` déclenche la remédiation ; `remediation` gère les incidents et le blocage WAF. Prometheus collecte les métriques, Loki centralise les journaux JSON de `auth`, `api`, `remediation` et `waf`, et Grafana fournit les dashboards de sécurité et de remédiation.
+
+Le back-office ajoute une identification en trois étapes (identifiant → visage via caméra USB → mot de passe) et une LED ESP8266 pilotée par MQTT. Les détails de stockage biométrique et les garanties de sécurité MQTT ne sont pas précisés.
+
+### 3.2 Scénarios stratégiques retenus
+
+| ID | Scénario stratégique | Chemin de risque | ER |
+|---|---|---|---|
+| S1 | Compromission de compte et tentative de fraude | Brute force sur `/auth/v1/login` → accès au compte si les contrôles échouent → tentative de virement | ER1, ER2 |
+| S2 | Dégradation de l'authentification | Volume élevé de tentatives → consommation de ressources ou blocage d'utilisateurs légitimes | ER3 |
+| S3 | Défaillance ou détournement de la remédiation | Détection ou commande inefficace/non autorisée → blocage non appliqué, excessif ou non traçable | ER1 à ER4 |
+| S4 | Accès non autorisé au back-office | Contournement de la reconnaissance faciale, des étapes d'authentification ou des habilitations | ER5, ER7 |
+| S5 | Indication de sécurité trompeuse | Message MQTT/état de LED manipulé ou incohérent avec l'état réel du back-office | ER8 |
+
+Un brute force composé uniquement d'échecs de connexion ne donne pas, à lui seul, accès au compte. Le scénario de fraude doit donc tester séparément le contrôle d'autorisation serveur du virement. Le WAF ne remplace ni l'authentification ni l'autorisation métier.
+
+## Atelier 4 — Scénarios opérationnels et cotation
+
+### 4.1 Scénario principal : brute force et blocage WAF
+
+1. **[EN PLACE]** `log-detector` interroge `login_attempts` toutes les 5 secondes.
+2. **[EN PLACE]** À partir de 5 échecs en 120 secondes pour une IP, il envoie `POST /remediation/v1/incidents`.
+3. **[EN PLACE]** Pour un incident `BRUTE_FORCE`, la politique exige un score ≥ 0,6 et au moins 5 échecs ; le playbook `block_source` écrit l'IP dans la liste de déni et recharge le WAF par signal HUP.
+4. **[EN PLACE]** La chaîne vérifie `/readyz` de `auth` et `api`, puis exécute une transaction canari de 1 centime entre deux comptes internes avec l'en-tête `X-Synthetic`. L'incident devient `RESOLVED` ou `FAILED`. Le ban expire après 300 secondes.
+5. **[À FAIRE]** Tester séparément le refus d'un virement non autorisé côté serveur. Le canari prouve le fonctionnement de la reprise, pas le rejet d'une fraude.
+
+**Limite ML :** le détecteur ML est livré mais non activable : modèle absent et seuil au statut `provisional_not_validated`. Aucune livraison d'incident n'est réalisée par la voie ML. La détection réellement en place est celle, sans ML, de `log-detector`.
+
+### 4.2 Scénarios opérationnels secondaires
+
+| ID | Scénario | Contrôle / preuve attendue |
+|---|---|---|
+| O2 | Tentatives répétées dégradant l'authentification | Observer erreurs, métriques et disponibilité ; ne conclure à une indisponibilité que si elle est mesurée. |
+| O3 | Échec de remédiation ou action abusive | Vérifier statut `FAILED`, traces de décision/action et comportement si le WAF ne recharge pas. |
+| O4 | Contournement ou échec biométrique | Vérifier la séquence d'identification, la remise à zéro de l'identifiant, les temporisations et l'application des habilitations. |
+| O5 | Manipulation de l'indicateur ESP8266 | Vérifier que l'état de la LED n'accorde jamais l'accès et reflète l'état réel sans remplacer les contrôles applicatifs. |
+| O6 | Perte de base, d'instance, du WAF ou du PC Hôte | Appliquer les procédures PCA/PRA ; conserver les preuves de bascule, restauration ou reconstruction. |
+
+### 4.3 Vraisemblance et synthèse initiale
+
+Échelle de travail : 1 (faible), 2 (modérée), 3 (élevée), 4 (très élevée). La vraisemblance doit être cotée après tests ; aucun niveau n'est inventé ci-dessous.
+
+| Risque | Scénario | ER | Gravité de référence | Vraisemblance initiale |
+|---|---|---|---:|---|
+| R1 | Compromission de compte puis tentative de virement | ER1, ER2 | 4 — Critique (ER2) | [à valider — tests d'authentification et d'autorisation] |
+| R2 | Tentatives répétées perturbant l'authentification | ER3 | 2 — Modéré | [à valider — test de charge autorisé et mesure d'impact] |
+| R3 | Échec, détournement ou excès de la remédiation | ER1 à ER4 | 3 — Majeur, à confirmer selon l'impact | [à valider — tests d'échec et d'accès à l'interface] |
+| R4 | Journaux absents ou altérés pendant l'incident | ER4 | 3 — Majeur | [à valider — test de collecte et de reconstitution] |
+| R5 | Contournement de l'identification faciale | ER5 | 4 — Critique | [à valider — tests d'accès au back-office] |
+| R6 | Faux rejet biométrique d'un utilisateur autorisé | ER6 | 2 — Modéré | [à valider — tests de reconnaissance] |
+| R7 | Modification non autorisée des habilitations | ER7 | 4 — Critique | [à valider — revue des rôles et tests d'autorisation] |
+| R8 | Manipulation de la LED ou des messages MQTT | ER8 | 2 — Modéré | [à valider — tests MQTT et contrôle de l'autorisation réelle] |
+| R9 | Perte du PC Hôte et de l'environnement local | ER3, ER4 et continuité | 4 — Critique pour le laboratoire, à valider | [à valider — reconstruction complète non démontrée] |
+
+Le risque R9 est ajouté pour couvrir la limite majeure identifiée dans le PCA/PRA : toutes les piles et sauvegardes sont sur un seul PC Hôte. Ce risque concerne la continuité du laboratoire, pas un événement redouté métier supplémentaire.
+
+## Atelier 5 — Traitement du risque
+
+### 5.1 Plan de traitement
+
+| ID | Risque | Mesure | Statut | Critère de validation |
+|---|---|---|---|---|
+| M1 | R1, R2 | Limitation et détection des tentatives d'authentification | **[EN PLACE]** Détection sans ML par seuil dans `log-detector` | Déclenchement au seuil prévu ; faux positifs et impact à mesurer |
+| M2 | R1 | Contrôle serveur des droits et de chaque virement | **[CONÇU, NON TESTÉ]** Présent dans l'analyse EBIOS ; preuve de test non fournie | Virement non autorisé refusé, même avec compte compromis |
+| M3 | R1, R2, R3 | Blocage temporaire de l'IP au WAF | **[EN PLACE]** TTL 300 s, rechargement HUP | Requête de l'IP bloquée ; expiration vérifiée |
+| M4 | R3 | Protéger l'interface de remédiation et limiter les actions autorisées | **[À FAIRE — validation technique]** | Commande non autorisée refusée et journalisée |
+| M5 | R4 | Centraliser les journaux utiles à l'investigation | **[EN PLACE]** Loki reçoit les journaux JSON de `auth`, `api`, `remediation`, `waf` | Chronologie reconstituable ; rétention et sauvegarde à vérifier |
+| M6 | R2 | Surveiller disponibilité et effets des tentatives | **[EN PLACE]** Prometheus, Grafana | Mesures disponibles pendant un test autorisé |
+| M7 | R3, R4 | Contrôler l'échec de remédiation et définir le repli | **[CONÇU, NON TESTÉ]** | Échec visible, statut `FAILED`, procédure de repli testée |
+| M8 | R1 à R4, R9 | Tester bascule, restauration et reconstruction | **[EN PLACE]** Bascule DB, dumps horaires et procédures PCA/PRA partiellement documentées | Résultats consignés ; reconstruction complète à démontrer |
+| M9 | R5, R6 | Tester la séquence biométrique et les règles de nouvelle tentative | **[À FAIRE — tests à documenter]** | Échec et réussite conformes à la consigne ; pas de contournement |
+| M10 | R7 | Vérifier les rôles et permissions du back-office côté serveur | **[À FAIRE — preuve non fournie]** | Fonction administrative inaccessible sans habilitation |
+| M11 | R8 | Contrôler les messages MQTT et séparer LED et autorisation | **[À FAIRE — preuve non fournie]** | Manipuler la LED ne permet pas d'accéder au back-office |
+
+### 5.2 Risques résiduels
+
+Les risques résiduels ne peuvent pas être cotés correctement avant les tests et la validation des mesures. Ils restent donc ouverts.
+
+| Risque | Mesures associées | État du risque résiduel |
+|---|---|---|
+| R1 | M1, M2, M3 | [à compléter — résultats des tests d'authentification, de blocage et d'autorisation] |
+| R2 | M1, M3, M6 | [à compléter — mesures d'impact sur la disponibilité] |
+| R3 | M4, M7 | [à compléter — tests de protection et d'échec de remédiation] |
+| R4 | M5, M8 | [à compléter — test de collecte, rétention et reprise des journaux] |
+| R5 | M9 | [à compléter — tests de contournement biométrique] |
+| R6 | M9 | [à compléter — résultats de reconnaissance et faux rejets] |
+| R7 | M10 | [à compléter — revue et tests d'habilitation] |
+| R8 | M11 | [à compléter — tests MQTT et vérification de l'autorisation applicative] |
+| R9 | M8 | [à compléter — reconstruction depuis le dépôt sur un poste distinct] |
+
+## À retenir
+
+- **[EN PLACE]** La détection opérationnelle est actuellement basée sur les journaux et un seuil fixe ; la voie ML n'est pas activable.
+- **[EN PLACE]** La remédiation bloque temporairement une IP au WAF et vérifie la reprise par une transaction canari synthétique.
+- **[À FAIRE]** Prouver séparément le refus d'un virement non autorisé côté serveur.
+- **[À FAIRE]** Valider les risques du back-office biométrique, des habilitations et de l'ESP8266/MQTT par des tests.
+- **Limite majeure :** la perte du PC Hôte n'est couverte par aucune bascule et les sauvegardes restent sur ce poste.
+
+## Références
+
+- ANSSI, *EBIOS Risk Manager — Guide méthodologique v1.5*.
+- ANSSI, *La méthode EBIOS Risk Manager*.
+- PCA/PRA du projet RESILIENCE-ALPHA : source des mesures de disponibilité, sauvegarde, bascule, reconstruction et limites opérationnelles.
+
+Les échelles et cotations sont des adaptations de travail au projet, à valider par l'équipe. Aucune conformité normative n'est revendiquée.

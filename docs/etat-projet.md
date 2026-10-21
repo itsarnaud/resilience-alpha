@@ -65,8 +65,13 @@ Réseaux : `backend` (apps ↔ apps + WAF + Prometheus + Ansible),
   - `id:1102` — méthode `DELETE` sur `/remediation/v1/blocks` (débloquer une IP ; CRS 911100)
 - **Blocage d'IP réel** : volume `resilience-alpha_waf_denylist` monté en lecture, inclus
   dans les 3 server blocks (`deny <ip>;`), rechargé par signal HUP depuis la remédiation.
+- **Analyse de risques & continuité** : [`analyse-ebios-rm.md`](analyse-ebios-rm.md)
+  (EBIOS RM : ER1–ER8, R1–R9, M1–M11) et [`PCA-PRA.md`](PCA-PRA.md)
+  (cartographie, matrice PTMA/RTO/RPO, procédures P1–P5). Mesures : MTTR ≈ 0,9 s,
+  bascule de base ≈ 2 s, RPO ≤ 1 h. Cotations et objectifs métier **à valider** ;
+  limite assumée : piles et sauvegardes sur le **PC Hôte** unique (risque R9).
 
-### ✅ Observabilité (niveau 0) — Grafana + Loki
+### ✅ Observabilité — Grafana + Loki
 - Le SIEM Wazuh a été **retiré du périmètre** : il ne recevait aucun log applicatif
   (0 agent enregistré, le filebeat du manager ne lisant que ses propres alertes).
 - La lecture des événements se fait donc dans **Grafana** (datasource **Loki** préconfigurée),
@@ -108,6 +113,13 @@ Réseaux : `backend` (apps ↔ apps + WAF + Prometheus + Ansible),
   tourne. Le `log-detector` simple assure déjà la détection autonome.
 - **Enrôlement du visage admin** : à faire après chaque reset (le visage n'est pas pré-seedé).
   Procédure : login via bootstrap puis `POST /admin/users/:id/face` (voir §6).
+- **Cotation des risques & objectifs de reprise** : vraisemblances R1–R9, risques résiduels et
+  RTO/RPO métier à valider (`docs/analyse-ebios-rm.md`, `docs/PCA-PRA.md`).
+- **Contrôles à prouver** : refus serveur d'un virement non autorisé (M2), protection de
+  l'interface de remédiation (M4), repli sur échec de remédiation (M7), séquence biométrique
+  (M9), habilitations du back-office (M10), messages MQTT et LED (M11).
+- **Continuité** : reconstruction complète de la plateforme sur un poste distinct non
+  démontrée (R9) ; sauvegardes conservées sur le PC Hôte.
 - **Livrables** : Dossier (PDF), Présentation (PPTX), Vidéo chronométrée (MP4).
 
 ---

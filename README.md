@@ -22,6 +22,8 @@ scripts/       outils : check-secrets.sh
 ## Documentation
 
 - [Architecture, flux, sécurité et plan DEV](docs/architecture.md)
+- [Analyse de risques EBIOS RM](docs/analyse-ebios-rm.md) — ateliers, événements redoutés, risques R1–R9, mesures M1–M11
+- [PCA/PRA — continuité et reprise](docs/PCA-PRA.md) — cartographie, matrice de reprise, procédures P1–P5
 - Contrats d'API : [auth](docs/api/auth.openapi.yaml), [paiements](docs/api/payments.openapi.yaml), [remédiation](docs/api/remediation.openapi.yaml)
 
 ### Visualiser les contrats d'API
