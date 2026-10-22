@@ -10,31 +10,18 @@ scrape_configs:
     static_configs:
       - targets: ["node-exporter:9100"]
 
-  # Les applis Node.js : apparaîtront "down" tant qu'elles n'exposent pas /metrics
-  # (ex. avec le paquet prom-client)
+  # Les applis Node.js (prom-client, endpoint /metrics). Noms = noms de conteneurs réels.
   - job_name: applications
     metrics_path: /metrics
     static_configs:
       - targets:
-          - application:3000
           - auth:3000
-          - api-paiement:3000
+          - api:3000
           - remediation:3000
 
   - job_name: face
     static_configs:
       - targets: ["face:5000"]
-
-  # --- Machines du groupe (windows_exporter sur chaque poste, port 9182) ---
-  - job_name: windows
-    static_configs:
-      - targets: ["host.docker.internal:9182"]
-        labels: { machine: "hote" }
-      # Décommenter et remplacer les IP (réseau 192.168.137.0/24) :
-      # - targets: ["192.168.137.XXX:9182"]
-      #   labels: { machine: "attaquant" }
-      # - targets: ["192.168.137.YYY:9182"]
-      #   labels: { machine: "ia" }
 
   # --- Disponibilité + latence des machines du groupe (via blackbox, sans agent) ---
   - job_name: machines-ping

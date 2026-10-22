@@ -1,73 +1,306 @@
 {
   "uid": "paiements-impact",
   "title": "Impact métier — Paiements",
-  "tags": ["resilience-alpha", "metier"],
+  "tags": [
+    "resilience-alpha",
+    "metier"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "10s",
-  "time": { "from": "now-30m", "to": "now" },
-  "templating": { "list": [] },
-  "annotations": { "list": [] },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
   "panels": [
     {
-      "id": 1, "type": "stat", "title": "€ encaissés (cumul)",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "currencyEUR", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
-      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "paiements_montant_euros_total" } ]
-    },
-    {
-      "id": 2, "type": "stat", "title": "Paiements traités",
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
-      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "paiements_total" } ]
-    },
-    {
-      "id": 3, "type": "stat", "title": "Manque à gagner sur la période (€)",
-      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "currencyEUR", "color": { "mode": "thresholds" },
-        "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 30 } ] } }, "overrides": [] },
-      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "clamp_min(30 * ($__range_s / 60) - increase(paiements_montant_euros_total[$__range]), 0)" } ]
-    },
-    {
-      "id": 4, "type": "timeseries", "title": "Débit encaissé (€/min) — attendu : 30",
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "currencyEUR", "custom": { "drawStyle": "line", "fillOpacity": 15 } },
-        "overrides": [ { "matcher": { "id": "byName", "options": "attendu (30 €/min)" },
-          "properties": [ { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [8, 6] } },
-            { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] } ] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "id": 1,
+      "type": "stat",
+      "title": "Paiements traités (cumul)",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(paiements_montant_euros_total[2m]) * 60", "legendFormat": "encaissé réel (€/min)" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "vector(30)", "legendFormat": "attendu (30 €/min)" }
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(payments_transactions_total)"
+        }
       ]
     },
     {
-      "id": 5, "type": "timeseries", "title": "Paiements par minute — attendu : 1",
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 15 } },
-        "overrides": [ { "matcher": { "id": "byName", "options": "attendu (1/min)" },
-          "properties": [ { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [8, 6] } },
-            { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] } ] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "id": 2,
+      "type": "stat",
+      "title": "Fraudes bloquées (cumul)",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(paiements_total[2m]) * 60", "legendFormat": "réel (/min)" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "vector(1)", "legendFormat": "attendu (1/min)" }
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(payments_fraud_blocked_total)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Taux de fraude (%)",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * sum(payments_fraud_blocked_total) / clamp_min(sum(payments_transactions_total), 1)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Paiements /min",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "attendu (30 €/min)"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    6
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(payments_transactions_total[2m])) * 60",
+          "legendFormat": "encaissé réel (€/min)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Fraudes bloquées /min",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "attendu (1/min)"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    6
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(payments_fraud_blocked_total[2m])) * 60",
+          "legendFormat": "réel (/min)"
+        }
       ]
     }
   ]
