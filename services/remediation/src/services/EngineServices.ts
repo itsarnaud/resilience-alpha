@@ -63,8 +63,23 @@ const restartService = async (incident: Incident): Promise<PlaybookResult> => {
     return { ok: false };
   }
   try {
-    await containers.restart(name);
-    await record(incident.id, 'restart_container', true, `conteneur ${name} redémarré`);
+    if (config.REMEDIATION_MODE === 'ansible') {
+      await containers.exec(config.ANSIBLE_CONTAINER, [
+        'ansible-playbook',
+        config.ANSIBLE_PLAYBOOK,
+        '-e',
+        `target=${name}`,
+      ]);
+      await record(
+        incident.id,
+        'restart_container',
+        true,
+        `playbook Ansible exécuté (cible ${name})`,
+      );
+    } else {
+      await containers.restart(name);
+      await record(incident.id, 'restart_container', true, `conteneur ${name} redémarré`);
+    }
     return { ok: true };
   } catch (err) {
     await record(

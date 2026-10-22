@@ -5,6 +5,8 @@ import { config } from './config.js';
 export interface ContainerControl {
   restart(name: string): Promise<void>;
   signal(name: string, signal: string): Promise<void>;
+  /** Exécute une commande dans un conteneur (ex. lancer un playbook Ansible). Renvoie la sortie. */
+  exec(name: string, cmd: string[]): Promise<string>;
 }
 
 /**
@@ -41,6 +43,30 @@ export class DockerControl implements ContainerControl {
     this.assertAllowed(name);
     await this.docker.getContainer(name).kill({ signal });
   }
+
+  async exec(name: string, cmd: string[]): Promise<string> {
+    this.assertAllowed(name);
+    const exec = await this.docker.getContainer(name).exec({
+      Cmd: cmd,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: true,
+    });
+    const stream = await exec.start({});
+    const output = await new Promise<string>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      stream.on('data', (c: Buffer) => chunks.push(c));
+      stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      stream.on('error', reject);
+    });
+    const { ExitCode } = await exec.inspect();
+    if (ExitCode !== 0) {
+      throw new Error(
+        `« ${cmd.join(' ')} » a échoué dans ${name} (code ${ExitCode}) : ${output.trim().slice(-500)}`,
+      );
+    }
+    return output;
+  }
 }
 
 class DisabledControl implements ContainerControl {
@@ -48,6 +74,9 @@ class DisabledControl implements ContainerControl {
     throw new Error('accès à Docker non configuré (DOCKER_HOST)');
   }
   async signal(): Promise<void> {
+    throw new Error('accès à Docker non configuré (DOCKER_HOST)');
+  }
+  async exec(): Promise<string> {
     throw new Error('accès à Docker non configuré (DOCKER_HOST)');
   }
 }

@@ -67,6 +67,13 @@ const ConfigSchema = z.object({
   /** Seuls ces conteneurs peuvent être redémarrés. Vide = aucun. */
   ALLOWED_CONTAINERS: z.string().default('').transform(csv),
 
+  /** Redémarrage d'un service : `docker` (restart direct) ou `ansible` (playbook Ansible). */
+  REMEDIATION_MODE: z.enum(['docker', 'ansible']).default('docker'),
+  /** Mode ansible : conteneur du nœud de contrôle où exécuter le playbook. */
+  ANSIBLE_CONTAINER: z.string().default('ansible'),
+  /** Mode ansible : playbook de redémarrage (relatif au working_dir du conteneur ansible). */
+  ANSIBLE_PLAYBOOK: z.string().default('playbooks/remediation.yml'),
+
   TRUST_PROXY: z.string().default('loopback,uniquelocal'),
 });
 
