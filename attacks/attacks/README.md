@@ -31,6 +31,59 @@ python3 lab.py --host xx.xx.xx.xx/auth/v1/login
   `--host 192.168.137.1`, `--host 192.168.137.1:8081`, `--host 192.168.137.1/auth/v1/login`,
   `--host http://192.168.137.1/auth/v1/login`. Sans chemin, `/auth/v1/login` est ajoute.
 
+## Declencher la detection sans dictionnaire (campagne courte)
+
+Pour provoquer la chaine *detection -> incident -> blocage WAF* de facon deterministe,
+sans lancer le balayage complet du dictionnaire :
+
+```bash
+cd attacks/attacks
+python3 lab.py --direct --ip 203.0.113.66 --attempts 6 --email victim@resilience.local
+```
+
+- `--direct` vise `http://localhost:3010/v1/login` (service `auth` sans le WAF). C'est
+  indispensable : via le WAF, l'adresse reelle du client est ajoutee en fin de
+  `X-Forwarded-For` et c'est elle qui compte.
+- `--ip` injecte l'IP source. Le service `auth` ne la retient que si la requete vient d'un
+  proxy de confiance (`TRUST_PROXY=loopback,uniquelocal`), donc d'une boucle locale.
+- `--attempts` enonce N tentatives a mot de passe fixe (`--password`), en serie.
+- Equivalent Windows : `brute-force-spam.cmd [IP] [NB] [EMAIL]`.
+
+Le seuil du detecteur est de 5 echecs sur 120 s pour une meme IP : 6 tentatives suffisent.
+
+### Verifier la chaine sur le PC Hote
+
+```bash
+docker exec db-auth psql -U auth_user -d auth -c "select ip, count(*), max(created_at) from login_attempts where created_at > now() - interval '3 minutes' group by ip;"
+docker exec db-remediation psql -U remediation_user -d remediation -c "select type, source_ip, status from incidents order by created_at desc limit 3;"
+docker exec waf sh -c "cat /etc/nginx/denylist/*.conf 2>/dev/null || echo 'liste vide'"
+```
+
+La premiere commande est la seule source de verite : c'est elle qui dit quelle IP le service
+`auth` a reellement enregistree. Les journaux du WAF montrent, eux, toujours l'adresse reelle
+du client.
+
+### Pourquoi la banquise ne se voit pas en local
+
+`PROTECTED_IPS` (`127.0.0.1`, `::1`, `192.168.137.1`, `192.168.65.1`, `172.17.0.1`) n'est
+jamais signale ni bloque, cote detecteur et cote remediation : un faux positif ne doit pas
+couper la passerelle. Une campagne lancee depuis le PC Hote avec l'IP reelle du client
+(`127.0.0.1` ou l'IP du pont Docker) est donc **volontairement sans effet** : il faut
+attaquer depuis le PC Attaquant, ou injecter une IP de test (`--ip`).
+
+### Simulation d'observation (`--inject-db`)
+
+Quand l'IP source ne peut pas etre injectee (pair non de confiance, header retirees en
+amont), le signal peut etre fabrique directement dans `login_attempts` :
+
+```bash
+python3 lab.py --inject-db --ip 203.0.113.66 --attempts 6 --email victim@resilience.local
+```
+
+Ce n'est **pas une attaque** : le detecteur recoit un signal fabrique. A utiliser pour
+demontrer la partie *detection -> remediation*, jamais pour pretendre qu'une attaque a ete
+bloquee.
+
 ## Journalisation
 
 Deux fichiers sont produits dans `logs/` (dossier configurable avec `--log-dir`) :
@@ -86,6 +139,13 @@ Aucun essai n'est perdu : le dictionnaire entier est teste, y compris apres un s
 | `--timeout` | `15` | Delai de reponse maximal, en secondes |
 | `--max-attempts` | illimite | Plafond de tentatives par compte |
 | `--continue-after-success` | off | Ne pas s'arreter au premier mot de passe trouve (teste tout le dictionnaire) |
+| `--ip` | off | IP source injectee dans `X-Forwarded-For` (retenue par `auth` seulement si le pair est de confiance : passer par `--direct`) |
+| `--attempts` | off | Mode campagne courte : N tentatives a mot de passe fixe, sans dictionnaire |
+| `--password` | `mauvais-mot-de-passe` | Mot de passe utilise en mode `--attempts` |
+| `--inject-db` | off | Simulation : ecrit les echecs directement dans `login_attempts` (ce n'est pas une attaque) |
+| `--db-container` | `db-auth` | Conteneur PostgreSQL des tentatives |
+| `--db-user` | `auth_user` | Utilisateur PostgreSQL |
+| `--db-name` | `auth` | Base PostgreSQL |
 | `--quiet` | off | Ne pas afficher le detail des tentatives |
 | `--log-dir` | `logs/` | Dossier des journaux JSON |
 | `--offline` | off | Auto-test hors ligne (dictionnaire contre empreintes SHA-256) |
@@ -116,6 +176,7 @@ Aucun essai n'est perdu : le dictionnaire entier est teste, y compris apres un s
 | Fichier | Contenu |
 | --- | --- |
 | `lab.py` | Script d'attaque (mode reseau + mode hors ligne) |
+| `brute-force-spam.cmd` | Equivalent Windows de la campagne courte (`for /L` + curl) |
 | `rockyou.txt` | Dictionnaire de l'attaque : 50 mots de passe rockyou + 3 mots de passe faibles du labo (`SEED_*`) |
 | `lab_targets.txt` | Comptes vises par l'attaque |
 | `logs/` | Journaux JSON des attaques (generes, non versionnes) |
