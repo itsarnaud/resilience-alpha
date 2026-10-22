@@ -23,6 +23,20 @@
 #  redemarre pas en boucle.
 # ============================================================================
 
+# --- Vraie IP client depuis X-Forwarded-For (labo Docker Desktop : sans ça, tout
+# le trafic apparait comme la passerelle Docker et le 'deny' bloque tout le monde).
+# On ne fait confiance au XFF que lorsqu'il vient des reseaux Docker (passerelles
+# NAT par lesquelles tout le trafic externe entre sur Docker Desktop), jamais d'un
+# client arbitraire. Couvre les reseaux Compose (172.16/12), la passerelle hote de
+# Docker Desktop (192.168.65.0/24) et un eventuel reseau overlay (10/8).
+# Limite assumee : le XFF reste falsifiable en bordure (voir docs). En prod Linux,
+# le WAF voit l'IP reelle directement et ceci devient inutile.
+set_real_ip_from 172.16.0.0/12;
+set_real_ip_from 192.168.65.0/24;
+set_real_ip_from 10.0.0.0/8;
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+
 # --- Front : banque client -> http://localhost/ ---
 server {
     listen 8080 default_server;

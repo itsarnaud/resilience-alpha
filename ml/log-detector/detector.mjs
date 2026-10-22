@@ -22,6 +22,28 @@ const COOLDOWN_MS = Number(env.COOLDOWN_SECONDS ?? '60') * 1000;
 
 const log = (o) => console.log(JSON.stringify({ ts: new Date().toISOString(), ...o }));
 
+/**
+ * IP interne/infra à ne JAMAIS bannir : loopback, lien-local, et surtout les plages
+ * privées (RFC1918) — passerelles et IP des réseaux Docker. Dans ce labo, un vrai
+ * attaquant arrive avec une IP publique via X-Forwarded-For ; toute IP privée est de
+ * l'infrastructure. Évite de se bannir soi-même (= bloquer tout le trafic du WAF).
+ */
+function isInternalIp(ip) {
+  if (!ip) return true;
+  const v = ip.toLowerCase();
+  if (v === '::1' || v.startsWith('fe80') || v.startsWith('fc') || v.startsWith('fd')) return true;
+  const m = v.replace(/^::ffff:/, '').split('.').map(Number);
+  if (m.length !== 4 || m.some((n) => Number.isNaN(n))) return false;
+  const [a, b] = m;
+  return (
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
+}
+
 const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 });
 
 // --- Jeton de service (mis en cache ~14 min, TTL auth = 900 s) ---
@@ -91,6 +113,7 @@ async function tick() {
   for (const row of rows) {
     const ip = row.ip;
     if (PROTECTED.has(ip)) continue;
+    if (isInternalIp(ip)) continue; // infra/Docker : jamais banni
     if (now - (reported.get(ip) ?? 0) < COOLDOWN_MS) continue;
     try {
       await report(ip, row.failures, row.targets);
