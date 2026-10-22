@@ -2,6 +2,8 @@
 from contextlib import closing
 from datetime import datetime, timedelta
 import json
+import os
+from ipaddress import ip_address
 from pathlib import Path
 import re
 import sqlite3
@@ -69,12 +71,20 @@ class IncidentPipeline:
                 if event and event.outcome=='failure' and start<event.timestamp<=end:
                     raw_ips.setdefault(event.source_ip,set()).add(record['ip'])
         queued=[]
+        skipped=[]
         for prediction in report['predictions']:
             if not prediction['is_anomaly']:
                 continue
             ip=prediction['source_ip'];row=by_ip[ip]
             # ML must flag the window; these conditions classify its observed evidence.
             kind='BRUTE_FORCE' if row['failure_count']>=5 and row['failure_ratio']>=0.8 else 'UNKNOWN_ANOMALY'
+            if self.mode == 'deliver':
+                address = ip_address(ip)
+                protected = {'192.168.166.1', '192.168.137.1', '192.168.65.1', '172.17.0.1'}
+                protected.update(value.strip() for value in os.getenv('DETECTOR_PROTECTED_IPS', '').split(',') if value.strip())
+                if kind != 'BRUTE_FORCE' or address.is_loopback or address.is_unspecified or address.is_multicast or ip in protected:
+                    skipped.append({'source_ip':ip, 'type':kind, 'reason':'not_eligible_for_automatic_block'})
+                    continue
             episode=self.tracker.get_or_create(ip,kind)
             key=f'{kind}:auth:{episode}'
             existing=self.outbox.get_payload(key)
@@ -95,6 +105,6 @@ class IncidentPipeline:
                 raise ValueError('Observed targets exceed incident contract limits')
             incident['targets']=accounts
             queued.append({'dedup_key':key,'queued':self.outbox.enqueue(incident),'payload':incident})
-        return {'observation':report,'mode':self.mode,'incidents':queued,
+        return {'observation':report,'mode':self.mode,'incidents':queued,'skipped':skipped,
                 'evidence_window':{'start':start.isoformat(),'end':end.isoformat()},
                 'note':'Anomaly episodes remain open until explicitly closed after confirmed recovery.'}

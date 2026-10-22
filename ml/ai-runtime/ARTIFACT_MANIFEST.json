@@ -5,15 +5,15 @@
   "artifacts": [
     {
       "path": "models/auth_isolation_forest_synthetic.joblib",
-      "sha256": "a590d2f5021f14e3e08bd68e6aa462d0ba7789cabdbee3ad331aaf06202d84ca",
-      "size_bytes": 1105419,
-      "git_included": false
+      "sha256": "95e880f4466c1b07a7f64eedc5e275054722b250864316a3b462550cb0a80625",
+      "size_bytes": 337807,
+      "git_included": true
     },
     {
       "path": "models/auth_threshold_candidate.json",
-      "sha256": "38b298bb9d6dad6c5487321d650d6e90bba11e6d0464d1f2cf9911f580c10789",
-      "size_bytes": 440,
-      "git_included": false
+      "sha256": "d2b3cefd1c45c235d2b22685c54958ede6db866176645775363df9adebc1f5d9",
+      "size_bytes": 567,
+      "git_included": true
     },
     {
       "path": "data/knowledge_base/team_repository/docs/architecture.md",
