@@ -54,6 +54,10 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      # Affichage intégré (iframe dans le back-office) + lecture anonyme (labo) :
+      GF_SECURITY_ALLOW_EMBEDDING: 'true'
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana

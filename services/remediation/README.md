@@ -19,7 +19,7 @@ détecteur ──POST /v1/incidents──▶ politique ──▶ playbook ──
 
 1. **Réception** (`202`). Le détecteur n'attend pas : le traitement continue en arrière-plan. Un incident déjà en cours pour la même clé, ou résolu depuis moins de 60 s, est renvoyé tel quel (`200`).
 2. **Politique.** Le score du détecteur est un indice, pas une certitude. En dessous de `MIN_SCORE`, ou pour un brute force avec moins de `MIN_FAILURES` échecs observés, ou pour un type sans playbook, l'incident passe à `IGNORED` et rien n'est fait.
-3. **Playbook.** `block_source` (brute force, inondation) bloque l'IP source dans le WAF. `restart_service` (service tombé) redémarre le conteneur. Pour une inondation, si le blocage ne suffit pas, on passe au redémarrage.
+3. **Playbook.** `block_source` (brute force, inondation) bloque l'IP source dans le WAF. `restart_service` (service tombé) redémarre le conteneur — via Docker (socket-proxy) ou via un **playbook Ansible**, selon `REMEDIATION_MODE`. Pour une inondation, si le blocage ne suffit pas, on passe au redémarrage.
 4. **Vérification.** Les services supervisés répondent sur `/readyz`, puis un virement de 1 centime entre les deux comptes du canari réussit. Plusieurs essais, car un service qui redémarre met un moment à répondre.
 5. **Résultat.** `RESOLVED` avec le temps de reprise, ou `FAILED` avec la raison. Un échec n'est jamais silencieux. Chaque étape est dans la chronologie de l'incident, dans les logs (`event: remediation_step`) et dans le flux temps réel.
 
@@ -75,6 +75,8 @@ Copier [`.env.example`](.env.example) en `.env` (ignoré par git et par Docker, 
 
 En local, `auth` écoute sur 3000, `api` sur 3001 et `remediation` sur 3002 (voir le `.env`).
 
+**Mode de redémarrage** (`restart_service`) : `REMEDIATION_MODE=docker` (défaut) redémarre le conteneur via le socket-proxy Docker ; `REMEDIATION_MODE=ansible` exécute à la place un playbook dans le conteneur `ANSIBLE_CONTAINER` (défaut `ansible`), fichier `ANSIBLE_PLAYBOOK` (défaut `playbooks/remediation.yml`), avec la cible passée en `-e target=<service>`. En Compose, la pile tourne en mode `ansible` et `ALLOWED_CONTAINERS` inclut `ansible`.
+
 ## Développement
 
 Première fois (depuis la racine) :
@@ -109,7 +111,7 @@ Le dossier `/waf` est un volume : il doit être monté **à la fois** sur la rem
 
 ## Ce qui reste à confirmer avec les autres équipes
 
-- **Cyber :** le WAF doit lire `WAF_DENYLIST_FILE` (dans la version actuelle : des lignes `deny <ip>;` à inclure dans la configuration nginx), monter le même volume (`resilience-alpha_waf_denylist`) et se recharger quand il change. Soit via `WAF_RELOAD_CONTAINER` (signal `HUP` envoyé par le proxy Docker), soit par un mécanisme de surveillance côté WAF. Le format est dans `lib/waf.ts`.
+- **Cyber : en place.** Le WAF monte le volume `resilience-alpha_waf_denylist` en lecture, inclut les lignes `deny <ip>;` dans ses 3 server blocks, et se recharge par signal `HUP` (`WAF_RELOAD_CONTAINER`, envoyé via le proxy Docker) à chaque changement. Format dans `lib/waf.ts`.
 - **IA :** le détecteur envoie `POST /v1/incidents` avec un jeton `svc:detector` (client `svc-detector` d'`auth`). Champs : voir le contrat.
 
 ## Limites assumées

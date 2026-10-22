@@ -338,6 +338,31 @@ services:
       logging: promtail
     networks: [backend, data]  # data = db-auth ; backend = auth + remediation
 
+  # ---------- IA de supervision : sante (-> relance) + intrusion -> notif SOC ----------
+  supervision-ai:
+    build: ../../ml/supervision-ai
+    container_name: supervision-ai
+    restart: unless-stopped
+    environment:
+      LOKI_URL: http://loki:3100
+      AUTH_URL: http://auth:3000
+      REMEDIATION_URL: http://remediation:3000
+      DETECTOR_CLIENT_ID: svc-detector
+      DETECTOR_CLIENT_SECRET: ${SVC_DETECTOR_SECRET}
+      WATCH_SERVICES: auth=http://auth:3000,api=http://api:3000,remediation=http://remediation:3000
+      POLL_SECONDS: '10'
+      NOTIFY_SMTP_HOST: mailpit
+      NOTIFY_SMTP_PORT: '1025'
+      NOTIFY_FROM: supervision@resilience-alpha.local
+      NOTIFY_TO: soc@resilience-alpha.local
+      INTRUSION_WINDOW_SECONDS: '120'
+      INTRUSION_MIN: '15'         # pic d'evts suspects (refus WAF / echecs auth) pour notifier
+    depends_on:
+      auth: { condition: service_healthy }
+    labels:
+      logging: promtail
+    networks: [backend, monitoring]  # backend = services + mailpit ; monitoring = loki
+
   db-auth:
     image: postgres:16-alpine
     container_name: db-auth

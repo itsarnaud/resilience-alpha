@@ -25,6 +25,22 @@ Après connexion :
 
 Le serveur applique les règles de sécurité (dernier administrateur non retirable, pas d'auto-modification) : cette page ne fait qu'afficher ses refus.
 
+## Observabilité (cockpit intégré)
+
+Un onglet **Observabilité** regroupe la supervision au même endroit, sans quitter le back-office :
+**Grafana** (dashboards *Sécurité — WAF*, *Remédiation*, *Santé plateforme*) et **Mailpit** (les
+notifications SOC) sont affichés en iframe, avec un lien « Ouvrir en plein écran » et un accès
+rapide à **Prometheus**. Les URL sont dérivées de l'hôte courant (`window.location.hostname`),
+donc ça marche en `localhost` comme derrière l'IP de démo.
+
+Deux conditions pour l'affichage intégré :
+- **Grafana** autorise l'iframe et la lecture anonyme (`GF_SECURITY_ALLOW_EMBEDDING`,
+  `GF_AUTH_ANONYMOUS_ENABLED=Viewer`, pile infra) — choix de labo assumé.
+- La **CSP** de ce front autorise `frame-src` vers les ports `:3000` (Grafana) et `:8025` (Mailpit).
+
+Si un cadre reste vide (un outil refuse d'être intégré), le lien « Ouvrir en plein écran » donne
+toujours l'accès direct.
+
 ## Développement
 
 ```bash

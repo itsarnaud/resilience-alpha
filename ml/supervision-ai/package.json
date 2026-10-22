@@ -1,0 +1,10 @@
+{
+  "name": "supervision-ai",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "IA de supervision : santé des services (relance via remediation) + détection d'intrusion (Loki) + notifications SOC (email Mailpit).",
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  }
+}

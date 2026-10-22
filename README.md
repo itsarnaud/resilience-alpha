@@ -11,7 +11,9 @@ services/      DEV    front, api (paiements), auth, remediation, dashboard, back
 packages/      DEV    shared (schémas zod, types, client HTTP typé)
 infra/         INFRA  compose/, ansible/, waf/, observability/
                CYBER  secrets/ (SOPS+age, fichiers *.enc.yaml uniquement)
-ml/            IA     detector/ (détection d'anomalies), assistant/ (RAG Ollama),
+ml/            IA     ai-runtime/ (detector : détection d'anomalies ; assistant : RAG Ollama),
+                      log-detector/ (brute-force sans ML → incident de remédiation),
+                      supervision-ai/ (santé des services + intrusion → remédiation & notif SOC),
                       face/ (reconnaissance faciale du back-office),
                       training/ (entraînement), data/ (jeux fictifs, non versionnés)
 attacks/       CYBER  scripts Red Team, à lancer depuis le PC Attaquant
@@ -51,7 +53,7 @@ Chaque service a son propre `.env.example` (`services/<nom>/.env.example`) avec 
 
 ## Lancer toute la plateforme (Docker Compose)
 
-Démarre tout avec des images construites depuis le code réel (`services/*`), comme en démo — pas les prototypes `apps/*` ni des serveurs `npm run dev`. La pile est coupée en 3 fichiers Compose (voir [`infra/compose/README.md`](infra/compose/README.md)) : **infra** (observabilité, mosquitto, Ansible), **dev** (les 7 services DEV + leurs bases, l'IA faciale, le détecteur et l'assistant RAG), **cyber** (le WAF, point d'entrée unique — routage par préfixe fait pour `/auth`, `/api`, `/remediation`).
+Démarre tout avec des images construites depuis le code réel (`services/*`), comme en démo — pas les prototypes `apps/*` ni des serveurs `npm run dev`. La pile est coupée en 3 fichiers Compose (voir [`infra/compose/README.md`](infra/compose/README.md)) : **infra** (observabilité, mosquitto, Ansible), **dev** (les 7 services DEV + leurs bases, l'IA faciale, le détecteur et l'assistant RAG, le `log-detector` et la `supervision-ai`), **cyber** (le WAF, point d'entrée unique — routage par préfixe : `/auth`, `/api`, `/remediation` préfixe retiré ; `/detector`, `/assistant` préfixe conservé ; fronts `front`/`dashboard`/`backoffice` sur 3 ports).
 
 ### 1. Préparer la configuration (une fois)
 
@@ -79,7 +81,7 @@ Sans ça, le conteneur `detector` démarre puis boucle en échec (modèle introu
 
 ```bash
 docker compose -f docker-compose.infra.yml  up -d --build   # réseaux partagés, Prometheus, Grafana, Loki, mosquitto, Ansible
-docker compose -f docker-compose.dev.yml    up -d --build   # auth, api, remediation, front, dashboard, backoffice, face, detector, assistant, 3 bases
+docker compose -f docker-compose.dev.yml    up -d --build   # auth, api, remediation, front, dashboard, backoffice, face, detector, assistant, log-detector, supervision-ai, 3 bases
 docker compose -f docker-compose.cyber.yml  up -d waf       # le WAF, point d'entrée unique
 ```
 
@@ -105,14 +107,14 @@ Identifiants créés : voir `SEED_*` dans `infra/compose/.env`. Le visage de l'a
 | Adresse               | Service      | Remarque                                                        |
 | ---------------------- | ------------ | ----------------------------------------------------------------- |
 | http://localhost       | `front`      | Banque client. `/auth/*` et `/api/*` routés, préfixe retiré.      |
-| http://localhost:8081  | `dashboard`  | Supervision. `/auth/*` et `/remediation/*` routés. `/assistant/*` et `/detector/*` **pas encore routés** (à transmettre à la cyber). |
+| http://localhost:8081  | `dashboard`  | Supervision. `/auth/*` et `/remediation/*` routés (préfixe retiré) ; `/detector/*` et `/assistant/*` routés (préfixe conservé). |
 | http://localhost:8082  | `backoffice` | Admin + visage. `/auth/*` routé.                                  |
 
 Chaque front a son propre port WAF (les 3 apps React sont compilées pour la racine `/`, elles ne peuvent pas partager un seul port avec des sous-chemins sans être reconstruites).
 
-**Limites connues (en cours de correction côté cyber) :**
-- L'étape photo du back-office (`POST /auth/v1/backoffice/login/:id/face`, corps `image/jpeg`) est bloquée par ModSecurity (403) tant que l'exception de `custom-before.conf` ne cible pas ce chemin — voir `services/backoffice/README.md`.
-- `/assistant/*` et `/detector/*` n'ont pas encore de route WAF ; contrairement à `/auth`/`/api`/`/remediation`, **le préfixe ne doit pas être retiré** (ces API le servent déjà elles-mêmes).
+**Exceptions ModSecurity et routage (en place) :**
+- L'étape photo du back-office (`POST /auth/v1/backoffice/login/:id/face`, corps `image/jpeg`) passe : l'exception est portée par `config/waf/modsecurity-override.conf` (chargé avant les règles CRS), voir `services/backoffice/README.md`.
+- `/detector/*` et `/assistant/*` sont routés **sans retrait de préfixe** (contrairement à `/auth`/`/api`/`/remediation`), car ces API servent déjà ce chemin.
 
 **Accès directs (debug, sans passer par le WAF) :**
 

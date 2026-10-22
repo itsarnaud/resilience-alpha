@@ -1,6 +1,6 @@
 # PROJECT RESILIENCE-ALPHA — État du projet (Groupe 3)
 
-_Mise à jour : 2026-10-21_
+_Mise à jour : 2026-10-22_
 
 Plateforme de paiement fictive conteneurisée, capable de **subir une attaque et de se
 rétablir seule**, avec **preuve de reprise** (transaction canari réussie après l'incident).
@@ -27,7 +27,7 @@ redémarrage) → transaction canari de preuve → service rétabli**. MTTR mesu
 | Pile | Fichier | Contenu |
 |---|---|---|
 | **Infra** | `docker-compose.infra.yml` | Prometheus, node-exporter, Loki, Promtail, Grafana, Ansible, Mosquitto (MQTT), docker-socket-proxy, blackbox |
-| **Dev** | `docker-compose.dev.yml` | `auth`, `api`, `remediation`, `front`, `dashboard`, `backoffice`, `face`, `log-detector`, 3 bases PostgreSQL |
+| **Dev** | `docker-compose.dev.yml` | `auth`, `api`, `remediation`, `front`, `dashboard`, `backoffice`, `face`, `log-detector`, `supervision-ai`, 3 bases PostgreSQL |
 | **Cyber** | `docker-compose.cyber.yml` | `waf` (point d'entrée unique) |
 
 **Ordre de lancement impératif** : infra → dev → cyber (infra crée les réseaux partagés).
@@ -82,16 +82,29 @@ Réseaux : `backend` (apps ↔ apps + WAF + Prometheus + Ansible),
   403 après un ban), `{container="remediation"}` (`ip_blocked`, `incident_resolved`).
 - Dashboards provisionnés : **Securite-WAF-Journaux** (blocages 403, volume de journaux par
   conteneur, journaux WAF en direct) et **Remediation** (MTTR, incidents, journal du moteur).
+- **Cockpit intégré** : le back-office expose un onglet **Observabilité** qui embarque les
+  dashboards Grafana + Mailpit (notifications SOC) — toute la supervision au même endroit.
 - Les métriques Prometheus (état du moteur, compteurs d'incidents) complètent la lecture.
 
 ### ✅ Remédiation autonome (le cœur du sujet)
 - `log-detector` (sans ML) : interroge `login_attempts` (db-auth) toutes les 5 s → IP avec
   ≥ 5 échecs sur 2 min → jeton `svc:detector` → `POST /remediation/v1/incidents`.
-- Moteur `remediation` : politique → playbook **`block_source`**
-  (validate_ip → block_ip → verify_ready → **canary_transaction**).
-- Modes de remédiation : Docker (restart via socket-proxy) **et** Ansible (playbook).
+- Moteur `remediation` : politique → playbook adapté :
+  - **`block_source`** (brute-force / inondation) : validate_ip → block_ip → verify_ready → **canary_transaction**.
+  - **`restart_service`** (service tombé) : restart → verify_ready → **canary_transaction**.
+- Modes de remédiation : Docker (restart via socket-proxy) **et** Ansible (playbook) — piloté
+  par `REMEDIATION_MODE` (`docker` | `ansible`).
 - **Testé bout en bout** : brute-force → IP bloquée dans le WAF → transaction canari
   réussie → incident `RESOLVED`. **MTTR ≈ 0,9 s.**
+
+### ✅ Supervision autonome (IA `supervision-ai`)
+- Service `supervision-ai` (sans ML) branché sur l'observabilité et le moteur de remédiation.
+- **Santé des services** : poll `/readyz` de `auth`, `api`, `remediation`. Si un service tombe →
+  incident `SERVICE_DOWN` → remédiation le **redémarre via Ansible** → **transaction canari** de
+  preuve → incident `RESOLVED` + notification SOC. **Testé** (`docker stop api`) : **MTTR ≈ 4,6 s**.
+- **Intrusion / comportement anormal** : interroge **Loki** (refus WAF 403, échecs d'auth) ;
+  au-delà de `INTRUSION_MIN` (15) événements sur `INTRUSION_WINDOW_SECONDS` (120 s) → **e-mail SOC**.
+- **Notifications** : e-mail via **Mailpit** (`soc@resilience-alpha.local`, UI http://localhost:8025).
 
 ### ✅ Consigne additionnelle 1 — MFA faciale + LED ESP8266
 - Back-office protégé par connexion renforcée **3 étapes** : identifiant → **visage** → mot de passe.
@@ -106,11 +119,13 @@ Réseaux : `backend` (apps ↔ apps + WAF + Prometheus + Ansible),
 
 ## 4. Ce qui reste
 
-- **Services IA `detector` / `assistant`** (ml/ai-runtime) : ne **buildent pas** —
-  `ml/ai-runtime/requirements.txt` contient des paquets/versions inexistants
-  (`httpcore2`, `httpx2`, `joblib==1.6.0`, `numpy==2.4.6`…). **À régénérer par le pôle IA**
-  depuis un venv qui tourne. En attendant, routes `/detector` `/assistant` en 502 — le reste
-  tourne. Le `log-detector` simple assure déjà la détection autonome.
+- **Services IA `detector` / `assistant`** (ml/ai-runtime, pôle IA) : **buildent et tournent**.
+  Routés par le WAF (`/detector/*`, `/assistant/*`, préfixe conservé). Le modèle et la base de
+  connaissances ne sont pas versionnés (gitignorés) : à récupérer depuis la livraison IA et à
+  placer dans `ml/ai-runtime/{models,data}` avant le build (voir README racine). La **livraison
+  automatique des incidents reste désactivée** côté IA tant que le modèle n'est pas `validated` ;
+  en attendant, la détection autonome est assurée par le `log-detector` (brute-force) et par
+  `supervision-ai` (crash de service + intrusion).
 - **Enrôlement du visage admin** : à faire après chaque reset (le visage n'est pas pré-seedé).
   Procédure : login via bootstrap puis `POST /admin/users/:id/face` (voir §6).
 - **Cotation des risques & objectifs de reprise** : vraisemblances R1–R9, risques résiduels et

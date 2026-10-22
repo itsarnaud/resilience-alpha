@@ -58,6 +58,9 @@ Le premier lancement télécharge et construit les images (quelques minutes). D�
 | `face`                                     | Dev   | Reconnaissance faciale du back-office (IA, `ml/face`)                      | interne (appelé par `auth`)                                   |
 | `detector`                                 | Dev   | Lecture du modèle ML d'anomalies (IA, `ml/ai-runtime`)                     | `8011` (accès direct, debug)                                   |
 | `assistant`                                | Dev   | Assistant RAG, documentation du projet (IA, `ml/ai-runtime` + Ollama hôte) | `8012` (accès direct, debug)                                   |
+| `log-detector`                             | Dev   | Détecteur de brute-force (lit `login_attempts`, émet des incidents, `ml/log-detector`) | interne                                                        |
+| `supervision-ai`                           | Dev   | IA de supervision : santé des services + intrusion (Loki) → remédiation & notif SOC (`ml/supervision-ai`) | interne                                                        |
+| `mailpit`                                  | Dev   | Boîte mail de test (notifications SOC de la remédiation / supervision)     | http://localhost:8025 (SMTP `1025`)                           |
 | `db-auth`, `db-paiement`, `db-remediation` | Dev   | Une base PostgreSQL 16 par service                                         | interne                                                        |
 | `waf`                                       | Cyber | Reverse proxy Nginx + ModSecurity (règles OWASP CRS), point d'entrée unique | http://localhost                                              |
 
