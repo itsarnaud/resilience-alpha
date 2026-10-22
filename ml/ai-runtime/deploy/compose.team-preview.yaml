@@ -31,7 +31,7 @@ services:
       AI_CHECK_REMEDIATION_URL: http://remediation:3000
       AI_CHECK_CLIENT_SECRET: ${SVC_DASHBOARD_SECRET:-}
       AI_CHECK_LOKI_URL: http://loki:3100
-      AI_CHECK_LOKI_QUERY: '{container="auth"}'
+      AI_CHECK_LOKI_QUERY: '{container=~"auth(-2)?"}'
     command: [python, -m, resilience_alpha_ai.anomaly_detection.team_check]
 
   ai-preview:
@@ -46,7 +46,7 @@ services:
       - --loki-url
       - http://loki:3100
       - --query
-      - '{container="auth"}'
+      - '{container=~"auth(-2)?"}'
       - --model
       - /app/models/auth_isolation_forest_synthetic.joblib
       - --threshold-config

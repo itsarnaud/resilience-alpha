@@ -136,8 +136,8 @@ services:
   # ---------- IA : détecteur ML et assistant RAG (ml/ai-runtime) ----------
   # Image buildée sans modèle ni corpus (montés en lecture seule par volume, voir AI_HANDOFF.md).
   # Lit/écrit nos vrais JWKS (auth:3000) : ici ces API ne font que LIRE l'état du modèle et
-  # répondre aux questions, elles ne signalent aucun incident (ça reste un worker séparé, non
-  # lancé ici, et bloqué tant que le modèle n'est pas `status: validated`).
+  # répondre aux questions. Le worker incident-preview ci-dessous alimente l'historique ;
+  # la livraison reste bloquée tant que le modèle et le seuil ne sont pas validés.
   detector:
     build:
       context: ../../ml/ai-runtime
@@ -247,6 +247,8 @@ services:
     volumes:
       - ../../ml/ai-runtime/models:/app/models:ro
       - ai_incident_preview_storage:/app/.storage
+      # Même historique que l'API detector, sans déplacer la file privée de preview.
+      - ai_detector_storage:/app/observations
     command:
       [
         python,
@@ -257,13 +259,15 @@ services:
         --loki-url,
         http://loki:3100,
         --query,
-        '{container="auth"}',
+        '{container=~"auth(-2)?"}',
         --model,
         /app/models/auth_isolation_forest_synthetic.joblib,
         --threshold-config,
         /app/models/auth_threshold_candidate.json,
         --pipeline-db,
         /app/.storage/incident_preview.sqlite,
+        --observation-db,
+        /app/observations/observations.sqlite,
       ]
     depends_on:
       auth: { condition: service_healthy }

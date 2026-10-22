@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 import sklearn
-from resilience_alpha_ai.anomaly_detection.model_loader import apply_threshold_config
+from resilience_alpha_ai.anomaly_detection.model_loader import apply_threshold_config, require_validated_delivery
 from resilience_alpha_ai.anomaly_detection.predict import predict_windows
 from resilience_alpha_ai.anomaly_detection.features import FEATURE_NAMES
 
@@ -35,5 +35,24 @@ class ThresholdTests(unittest.TestCase):
         self.assertEqual([r['is_anomaly'] for r in before],[True,True])
         self.assertEqual([r['is_anomaly'] for r in after],[False,True])
         self.assertEqual([r['score'] for r in before],[r['score'] for r in after])
+    def test_approved_threshold_keeps_status_and_allows_approved_model(self):
+        original={'status':'validated'}
+        adjusted=apply_threshold_config(original,{**self.config(),'status':'validated'},'abc')
+        self.assertEqual(adjusted['threshold_status'],'validated')
+        require_validated_delivery(adjusted)
+        self.assertNotIn('threshold_status',original)
+    def test_approved_threshold_does_not_promote_prototype_model(self):
+        adjusted=apply_threshold_config({'status':'prototype_not_validated'},
+                                        {**self.config(),'status':'validated'},'abc')
+        self.assertEqual(adjusted['status'],'prototype_not_validated')
+        with self.assertRaises(ValueError):require_validated_delivery(adjusted)
+    def test_unknown_threshold_status_is_rejected(self):
+        for status in ('approved',None,True):
+            with self.subTest(status=status),self.assertRaises(ValueError):
+                apply_threshold_config({}, {**self.config(),'status':status}, 'abc')
+    def test_delivery_rejects_unknown_threshold_state(self):
+        for status in ('provisional_not_validated','unknown',None):
+            with self.subTest(status=status),self.assertRaises(ValueError):
+                require_validated_delivery({'status':'validated','threshold_status':status})
 
 if __name__=='__main__':unittest.main()

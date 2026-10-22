@@ -2,9 +2,11 @@
 
 ## Objectif et périmètre
 
-Le Compose DEV démarre les API `detector` et `assistant`, mais aucun collecteur ML.
-`compose.team-preview.yaml` ajoute un worker **preview** : Loki → ML → historique
-du dashboard et incidents locaux. Il n'envoie aucun incident à la remédiation.
+Le Compose DEV inclut désormais les API `detector` et `assistant` ainsi que le
+worker `incident-preview`. Suivre [AI_STARTUP.md](AI_STARTUP.md) pour le lancer.
+`compose.team-preview.yaml` fournit le checker et un worker séparé facultatif :
+ne pas lancer ce dernier si le worker DEV est actif. Ils calculent les anomalies
+sans transmettre d'incident à la remédiation en mode preview.
 Le modèle et son seuil gardent leur statut provisoire.
 
 Le checker teste les connexions directes, les protections 401, un vrai jeton
@@ -53,7 +55,7 @@ IP attaquante inconnue). Le code de sortie vaut 1 si un contrôle échoue.
 Les jetons et secrets ne sont ni affichés ni exportés.
 
 Si les logs sont vides, effectuer une connexion normale sur la plateforme,
-attendre la collecte Promtail, puis relancer. La requête `{container="auth"}`
+attendre la collecte Promtail, puis relancer. La requête `{container=~"auth(-2)?"}`
 correspond au nom du conteneur et au label créés par la configuration Promtail
 du dépôt. Si l'infra change ce label, adapter les deux occurrences dans le Compose.
 

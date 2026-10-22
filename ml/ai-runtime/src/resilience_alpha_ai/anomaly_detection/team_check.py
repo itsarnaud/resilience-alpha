@@ -154,7 +154,7 @@ def main():
                 "assistant": "http://assistant:8000", "remediation": "http://remediation:3000",
                 "loki": "http://loki:3100"}
     config = {name: os.getenv("AI_CHECK_" + name.upper() + "_URL", value) for name, value in defaults.items()}
-    config["query"] = os.getenv("AI_CHECK_LOKI_QUERY", '{container="auth"}')
+    config["query"] = os.getenv("AI_CHECK_LOKI_QUERY", '{container=~"auth(-2)?"}')
     config["secret"] = os.getenv("AI_CHECK_CLIENT_SECRET", "")
     report = run_checks(config, lookback=args.lookback_seconds,
                         expected_ip=args.expected_attacker_ip, question=args.question, export_dir=args.export_dir)
