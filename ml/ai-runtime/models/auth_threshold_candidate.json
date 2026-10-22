@@ -1,10 +1,12 @@
 {
-  "threshold": 0.6235500624027918,
+  "threshold": 0.7403054243227413,
   "comparison": "score > threshold",
   "score_method": "negative_score_samples",
-  "method": "next_float_above_maximum_normal_calibration_score",
-  "calibration_windows": 10,
-  "model_sha256": "a590d2f5021f14e3e08bd68e6aa462d0ba7789cabdbee3ad331aaf06202d84ca",
-  "calibration_sha256": "c829fbfe410481ccea45f571dca9242e5d3bc2d5dc284bc76e583af3a39cafe5",
-  "status": "provisional_not_validated"
+  "method": "maximum_low_activity_calibration_score_plus_0.01",
+  "calibration_windows": 3,
+  "model_sha256": "95e880f4466c1b07a7f64eedc5e275054722b250864316a3b462550cb0a80625",
+  "calibration_sha256": "37c0d2c8ba16af30af29300732e19c6c23842f572b32f82b3ce96caee0f72237",
+  "status": "validated",
+  "validation_scope": "controlled_authentication_lab",
+  "validation_source_sha256": "37c0d2c8ba16af30af29300732e19c6c23842f572b32f82b3ce96caee0f72237"
 }

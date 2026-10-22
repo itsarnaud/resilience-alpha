@@ -6,6 +6,7 @@ services:
       REMEDIATION_URL: http://remediation:3000
       DETECTOR_CLIENT_ID: svc-detector
       DETECTOR_CLIENT_SECRET: ${SVC_DETECTOR_SECRET:?Set the team detector secret}
+      DETECTOR_PROTECTED_IPS: ${DETECTOR_PROTECTED_IPS:-}
     command:
       - python
       - -m
@@ -21,6 +22,6 @@ services:
       - --threshold-config
       - /app/models/auth_threshold_candidate.json
       - --pipeline-db
-      - /app/.storage/incident_delivery.sqlite
+      - /app/.storage/incident_delivery_v2.sqlite
       - --observation-db
       - /app/observations/observations.sqlite
