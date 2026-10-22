@@ -1,16 +1,35 @@
 """Parse authentication events from a Loki query_range response."""
 
 import json
+import re
 
 from resilience_alpha_ai.anomaly_detection.auth_log_adapter import parse_auth_log
 
 
+# Only recognized startup diagnostics are non-JSON exceptions. Unknown text and
+# damaged JSON remain errors, so incomplete authentication data cannot trigger
+# automatic remediation. Full-line matching prevents hiding a trailing event.
+_STARTUP_LINES = (
+    r"No pending migrations to apply\.",
+    r"[0-9]+ migrations? found in prisma/migrations",
+    r'Loaded Prisma config from [A-Za-z0-9_./-]+\.',
+    r'Prisma schema loaded from [A-Za-z0-9_./-]+\.?',
+    r'Datasource "[A-Za-z0-9_-]+": PostgreSQL database "[A-Za-z0-9_-]+", schema "[A-Za-z0-9_-]+" at "[A-Za-z0-9_.:-]+"',
+)
+
+
 def decode_log_line(line: str) -> dict:
     """Accept application JSON directly or inside a Docker log wrapper."""
+    if not isinstance(line, str):
+        raise ValueError("Expected a string log line")
+    text = line.strip()
+    if not text or any(re.fullmatch(pattern, text) for pattern in _STARTUP_LINES):
+        return {}  # Counted as unrelated by parse_loki_response.
     record = json.loads(line)
 
     if isinstance(record, dict) and isinstance(record.get("log"), str):
-        record = json.loads(record["log"])
+        # Apply identical classification to plain and Docker-wrapped logs.
+        return decode_log_line(record["log"])
 
     if not isinstance(record, dict):
         raise ValueError("Expected a JSON log object")
