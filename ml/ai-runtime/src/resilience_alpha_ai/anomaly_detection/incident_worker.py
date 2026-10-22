@@ -9,7 +9,7 @@ import threading
 import signal
 
 import httpx
-from resilience_alpha_ai.anomaly_detection.model_loader import load_model
+from resilience_alpha_ai.anomaly_detection.model_loader import load_model, require_validated_delivery
 from resilience_alpha_ai.anomaly_detection.loki_client import fetch_logs
 from resilience_alpha_ai.anomaly_detection.incident_pipeline import IncidentPipeline
 from resilience_alpha_ai.anomaly_detection.remediation_client import RemediationClient
@@ -40,8 +40,10 @@ def main():
     with ExitStack() as stack:
         client=None
         if args.mode=='deliver':
-            if artifact.get('status')!='validated' or artifact.get('threshold_status')=='provisional_not_validated':
-                parser.error('Current model/threshold is provisional: live delivery blocked')
+            try:
+                require_validated_delivery(artifact)
+            except ValueError as error:
+                parser.error(str(error))
             required=['DETECTOR_AUTH_URL','REMEDIATION_URL','DETECTOR_CLIENT_ID','DETECTOR_CLIENT_SECRET']
             if any(not os.getenv(key) for key in required):parser.error('Missing service endpoint or credential environment variables')
             http=stack.enter_context(httpx.Client(timeout=10,trust_env=False))

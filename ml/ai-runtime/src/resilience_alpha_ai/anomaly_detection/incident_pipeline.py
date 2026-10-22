@@ -12,6 +12,7 @@ from resilience_alpha_ai.anomaly_detection.episodes import EpisodeTracker
 from resilience_alpha_ai.anomaly_detection.features import build_features
 from resilience_alpha_ai.anomaly_detection.incidents import build_incident
 from resilience_alpha_ai.anomaly_detection.loki_parser import decode_log_line, parse_loki_response
+from resilience_alpha_ai.anomaly_detection.model_loader import require_validated_delivery
 from resilience_alpha_ai.anomaly_detection.outbox import IncidentOutbox
 from resilience_alpha_ai.anomaly_detection.runtime import analyze_payload
 
@@ -21,8 +22,7 @@ class IncidentPipeline:
         if mode not in {'preview', 'deliver'}:
             raise ValueError('Mode must be preview or deliver')
         if mode == 'deliver':
-            if artifact.get('status') != 'validated' or artifact.get('threshold_status', 'model_default') == 'provisional_not_validated':
-                raise ValueError('Live delivery requires a validated model and non-provisional threshold')
+            require_validated_delivery(artifact)
             if client is None:
                 raise ValueError('Delivery client required')
         elif client is not None:

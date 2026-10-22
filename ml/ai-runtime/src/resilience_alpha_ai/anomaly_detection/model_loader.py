@@ -17,10 +17,22 @@ def apply_threshold_config(artifact, config, model_sha256):
     value = config.get('threshold')
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1:
         raise ValueError('Threshold must be a finite number between zero and one')
+    status = config.get('status', 'provisional_not_validated')
+    if status not in {'provisional_not_validated', 'validated'}:
+        raise ValueError('Unsupported threshold validation status')
     result = dict(artifact)
     result['decision_threshold'] = float(value)
-    result['threshold_status'] = 'provisional_not_validated'
+    # Preserve an explicitly reviewed threshold status; never promote the model.
+    result['threshold_status'] = status
     return result
+
+
+def require_validated_delivery(artifact):
+    """Reject prototypes and unknown threshold states before opening a live queue."""
+    if artifact.get('status') != 'validated':
+        raise ValueError('Live delivery requires a validated model')
+    if artifact.get('threshold_status', 'model_default') not in {'validated', 'model_default'}:
+        raise ValueError('Live delivery requires a validated threshold')
 
 
 def load_model(model_path, threshold_path=None):

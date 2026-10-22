@@ -1,0 +1,26 @@
+# Opt-in after model, threshold and source-IP validation; DEV stays in preview.
+services:
+  incident-preview:
+    environment:
+      DETECTOR_AUTH_URL: http://auth:3000
+      REMEDIATION_URL: http://remediation:3000
+      DETECTOR_CLIENT_ID: svc-detector
+      DETECTOR_CLIENT_SECRET: ${SVC_DETECTOR_SECRET:?Set the team detector secret}
+    command:
+      - python
+      - -m
+      - resilience_alpha_ai.anomaly_detection.incident_worker
+      - --mode
+      - deliver
+      - --loki-url
+      - http://loki:3100
+      - --query
+      - '{container=~"auth(-2)?"}'
+      - --model
+      - /app/models/auth_isolation_forest_synthetic.joblib
+      - --threshold-config
+      - /app/models/auth_threshold_candidate.json
+      - --pipeline-db
+      - /app/.storage/incident_delivery.sqlite
+      - --observation-db
+      - /app/observations/observations.sqlite
