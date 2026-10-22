@@ -7,6 +7,7 @@ import { canaryTotal } from '../lib/metrics.js';
 import { chainFor, isProtectedIp } from '../lib/playbooks.js';
 import { isReady, runCanaryTransaction } from '../lib/platform.js';
 import { prisma } from '../lib/prisma.js';
+import { notifyIncident } from '../lib/notify.js';
 import { record } from './ActionsServices.js';
 import * as BlocksServices from './BlocksServices.js';
 import * as IncidentsServices from './IncidentsServices.js';
@@ -146,7 +147,8 @@ const verifyRecovery = async (incident: Incident): Promise<boolean> => {
 
 const fail = async (id: string, reason: string) => {
   await record(id, 'incident_failed', false, reason);
-  await IncidentsServices.setState(id, 'FAILED', { failureReason: reason });
+  const incident = await IncidentsServices.setState(id, 'FAILED', { failureReason: reason });
+  await notifyIncident(incident, 'FAILED');
 };
 
 const run = async (id: string): Promise<void> => {
@@ -167,7 +169,8 @@ const run = async (id: string): Promise<void> => {
     if (result.ok) {
       await IncidentsServices.setState(id, 'VERIFYING');
       if (await verifyRecovery(incident)) {
-        await IncidentsServices.setState(id, 'RESOLVED');
+        const resolved = await IncidentsServices.setState(id, 'RESOLVED');
+        await notifyIncident(resolved, 'RESOLVED');
         return;
       }
       await record(id, 'verify', false, `reprise non confirmée après ${name}`);

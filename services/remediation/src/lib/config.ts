@@ -75,6 +75,13 @@ const ConfigSchema = z.object({
   ANSIBLE_PLAYBOOK: z.string().default('playbooks/remediation.yml'),
 
   TRUST_PROXY: z.string().default('loopback,uniquelocal'),
+
+  /** Notification par e-mail (SMTP) à la résolution ou à l'échec d'un incident. Facultatif : sans
+   * NOTIFY_SMTP_HOST, aucun mail n'est envoyé. */
+  NOTIFY_SMTP_HOST: z.string().optional(),
+  NOTIFY_SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  NOTIFY_FROM: z.string().default('remediation@resilience-alpha.local'),
+  NOTIFY_TO: z.string().default('soc@resilience-alpha.local'),
 });
 
 export const config = loadConfig(ConfigSchema);

@@ -11,6 +11,15 @@ x-node-service: &node-service
   networks: [backend, data]
 
 services:
+  # ---------- Notifications : serveur SMTP de test + interface web ----------
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    restart: unless-stopped
+    ports:
+      - '8025:8025' # interface web : consulter les mails reçus
+    networks: [backend]
+
   auth:
     <<: *node-service
     build:
@@ -114,12 +123,17 @@ services:
       REMEDIATION_MODE: ansible              # redemarrage via playbook Ansible (sinon 'docker')
       WAF_RELOAD_CONTAINER: waf # signal HUP envoyé au WAF après chaque écriture de la liste de blocage
       TRUST_PROXY: loopback,uniquelocal
+      NOTIFY_SMTP_HOST: mailpit
+      NOTIFY_SMTP_PORT: '1025'
+      NOTIFY_FROM: remediation@resilience-alpha.local
+      NOTIFY_TO: soc@resilience-alpha.local
     volumes:
       - waf_denylist:/waf
     depends_on:
       db-remediation: { condition: service_healthy }
       auth: { condition: service_healthy }
       api: { condition: service_healthy }
+      mailpit: { condition: service_started }
     networks: [backend, data, monitoring, remediation]
 
   # ---------- IA : reconnaissance faciale (MFA back-office) ----------

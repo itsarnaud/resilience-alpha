@@ -1,4 +1,5 @@
 import { HttpError, type IncidentReport, type IncidentState } from '@resilience/shared';
+import type { Incident } from '../generated/prisma/client.js';
 import type { IncidentWithActions } from '../lib/dto.js';
 import type { Actor } from '../lib/context.js';
 import { logger } from '../lib/logger.js';
@@ -116,7 +117,7 @@ export const setState = async (
   id: string,
   state: IncidentState,
   patch: { playbook?: string; failureReason?: string } = {},
-): Promise<void> => {
+): Promise<Incident> => {
   const now = new Date();
   const incident = await prisma.incident.update({
     where: { id },
@@ -148,4 +149,5 @@ export const setState = async (
     );
   }
   await ActionsServices.publish(id);
+  return incident;
 };
