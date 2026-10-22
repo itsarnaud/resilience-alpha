@@ -1,0 +1,186 @@
+{
+  "source_sha256": "37c0d2c8ba16af30af29300732e19c6c23842f572b32f82b3ce96caee0f72237",
+  "events": 2217,
+  "ignored": 31,
+  "rejected": 0,
+  "duplicates": 0,
+  "threshold": 0.6235500624027918,
+  "remediation_sent": false,
+  "windows": [
+    {
+      "end": "09:21:30",
+      "predictions": [
+        {
+          "source_ip": "192.168.166.1",
+          "window_end": "2026-10-22T09:21:30+00:00",
+          "is_anomaly": true,
+          "threshold_status": "provisional_not_validated",
+          "anomaly_score": 0.26341185964918545,
+          "score": 0.7634118596491855,
+          "threshold": 0.6235500624027918,
+          "score_method": "negative_score_samples",
+          "features": {
+            "attempt_count": 106,
+            "failure_count": 106,
+            "success_count": 0,
+            "failure_ratio": 1.0,
+            "unique_accounts": 2
+          },
+          "training_data_origin": "synthetic",
+          "model_status": "prototype_not_validated"
+        }
+      ],
+      "new_incidents": 1
+    },
+    {
+      "end": "09:30:30",
+      "predictions": [
+        {
+          "source_ip": "192.168.166.1",
+          "window_end": "2026-10-22T09:30:30+00:00",
+          "is_anomaly": true,
+          "threshold_status": "provisional_not_validated",
+          "anomaly_score": 0.26341185964918545,
+          "score": 0.7634118596491855,
+          "threshold": 0.6235500624027918,
+          "score_method": "negative_score_samples",
+          "features": {
+            "attempt_count": 256,
+            "failure_count": 256,
+            "success_count": 0,
+            "failure_ratio": 1.0,
+            "unique_accounts": 2
+          },
+          "training_data_origin": "synthetic",
+          "model_status": "prototype_not_validated"
+        }
+      ],
+      "new_incidents": 0
+    },
+    {
+      "end": "09:42:30",
+      "predictions": [
+        {
+          "source_ip": "127.0.0.1",
+          "window_end": "2026-10-22T09:42:30+00:00",
+          "is_anomaly": true,
+          "threshold_status": "provisional_not_validated",
+          "anomaly_score": 0.26341185964918545,
+          "score": 0.7634118596491855,
+          "threshold": 0.6235500624027918,
+          "score_method": "negative_score_samples",
+          "features": {
+            "attempt_count": 320,
+            "failure_count": 320,
+            "success_count": 0,
+            "failure_ratio": 1.0,
+            "unique_accounts": 2
+          },
+          "training_data_origin": "synthetic",
+          "model_status": "prototype_not_validated"
+        }
+      ],
+      "new_incidents": 1
+    },
+    {
+      "end": "10:25:30",
+      "predictions": [
+        {
+          "source_ip": "203.0.113.100",
+          "window_end": "2026-10-22T10:25:30+00:00",
+          "is_anomaly": true,
+          "threshold_status": "provisional_not_validated",
+          "anomaly_score": 0.28035115621084394,
+          "score": 0.7803511562108439,
+          "threshold": 0.6235500624027918,
+          "score_method": "negative_score_samples",
+          "features": {
+            "attempt_count": 48,
+            "failure_count": 48,
+            "success_count": 0,
+            "failure_ratio": 1.0,
+            "unique_accounts": 1
+          },
+          "training_data_origin": "synthetic",
+          "model_status": "prototype_not_validated"
+        }
+      ],
+      "new_incidents": 1
+    },
+    {
+      "end": "10:26:30",
+      "predictions": [
+        {
+          "source_ip": "203.0.113.100",
+          "window_end": "2026-10-22T10:26:30+00:00",
+          "is_anomaly": true,
+          "threshold_status": "provisional_not_validated",
+          "anomaly_score": 0.28035115621084394,
+          "score": 0.7803511562108439,
+          "threshold": 0.6235500624027918,
+          "score_method": "negative_score_samples",
+          "features": {
+            "attempt_count": 219,
+            "failure_count": 219,
+            "success_count": 0,
+            "failure_ratio": 1.0,
+            "unique_accounts": 1
+          },
+          "training_data_origin": "synthetic",
+          "model_status": "prototype_not_validated"
+        }
+      ],
+      "new_incidents": 0
+    },
+    {
+      "end": "10:28:00",
+      "predictions": [
+        {
+          "source_ip": "203.0.113.100",
+          "window_end": "2026-10-22T10:28:00+00:00",
+          "is_anomaly": true,
+          "threshold_status": "provisional_not_validated",
+          "anomaly_score": 0.28035115621084394,
+          "score": 0.7803511562108439,
+          "threshold": 0.6235500624027918,
+          "score_method": "negative_score_samples",
+          "features": {
+            "attempt_count": 54,
+            "failure_count": 54,
+            "success_count": 0,
+            "failure_ratio": 1.0,
+            "unique_accounts": 1
+          },
+          "training_data_origin": "synthetic",
+          "model_status": "prototype_not_validated"
+        }
+      ],
+      "new_incidents": 0
+    },
+    {
+      "end": "10:52:30",
+      "predictions": [
+        {
+          "source_ip": "192.168.166.1",
+          "window_end": "2026-10-22T10:52:30+00:00",
+          "is_anomaly": false,
+          "threshold_status": "provisional_not_validated",
+          "anomaly_score": -0.034526908775268206,
+          "score": 0.4654730912247318,
+          "threshold": 0.6235500624027918,
+          "score_method": "negative_score_samples",
+          "features": {
+            "attempt_count": 2,
+            "failure_count": 0,
+            "success_count": 2,
+            "failure_ratio": 0.0,
+            "unique_accounts": 1
+          },
+          "training_data_origin": "synthetic",
+          "model_status": "prototype_not_validated"
+        }
+      ],
+      "new_incidents": 0
+    }
+  ]
+}
