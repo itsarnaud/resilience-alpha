@@ -72,12 +72,14 @@ class IncidentPipeline:
                     raw_ips.setdefault(event.source_ip,set()).add(record['ip'])
         queued=[]
         skipped=[]
+        still_anomalous=set()
         for prediction in report['predictions']:
             if not prediction['is_anomaly']:
                 continue
             ip=prediction['source_ip'];row=by_ip[ip]
             # ML must flag the window; these conditions classify its observed evidence.
             kind='BRUTE_FORCE' if row['failure_count']>=5 and row['failure_ratio']>=0.8 else 'UNKNOWN_ANOMALY'
+            still_anomalous.add((ip,kind))
             if self.mode == 'deliver':
                 address = ip_address(ip)
                 protected = {'192.168.166.1', '192.168.137.1', '192.168.65.1', '172.17.0.1'}
@@ -105,6 +107,18 @@ class IncidentPipeline:
                 raise ValueError('Observed targets exceed incident contract limits')
             incident['targets']=accounts
             queued.append({'dedup_key':key,'queued':self.outbox.enqueue(incident),'payload':incident})
+        # No feedback channel exists from remediation back to this worker to signal
+        # confirmed recovery, so an episode cannot stay open "until closed" the way the
+        # original design intended: nothing would ever close it, and the same IP could
+        # only ever trigger one incident for the lifetime of this pipeline database
+        # (e.g. a manual unblock followed by a repeat attack would be silently
+        # ignored). Instead, close any open episode whose IP is no longer flagged
+        # anomalous in this window: a continuing burst keeps re-appearing here every
+        # poll and stays deduplicated, while a burst that genuinely stops (blocked by
+        # the WAF, or the attacker gives up) lets the next distinct burst from the
+        # same IP open a fresh episode and fire a new incident.
+        for source_ip,incident_type,episode_id in self.tracker.open_episodes():
+            if (source_ip,incident_type) not in still_anomalous:
+                self.tracker.close_episode(source_ip,episode_id,incident_type)
         return {'observation':report,'mode':self.mode,'incidents':queued,'skipped':skipped,
-                'evidence_window':{'start':start.isoformat(),'end':end.isoformat()},
-                'note':'Anomaly episodes remain open until explicitly closed after confirmed recovery.'}
+                'evidence_window':{'start':start.isoformat(),'end':end.isoformat()}}

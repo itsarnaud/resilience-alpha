@@ -51,6 +51,14 @@ class EpisodeTracker:
 
         return row[0]
 
+    def open_episodes(self) -> list[tuple[str, str, str]]:
+        """List every currently open (source_ip, incident_type, episode_id)."""
+        with self.db:
+            rows = self.db.execute("""
+                SELECT source_ip, incident_type, episode_id FROM active_episodes
+            """).fetchall()
+        return [tuple(row) for row in rows]
+
     def close_episode(
         self,
         source_ip: str,
