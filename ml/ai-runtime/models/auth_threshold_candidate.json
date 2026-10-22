@@ -1,0 +1,10 @@
+{
+  "threshold": 0.6235500624027918,
+  "comparison": "score > threshold",
+  "score_method": "negative_score_samples",
+  "method": "next_float_above_maximum_normal_calibration_score",
+  "calibration_windows": 10,
+  "model_sha256": "a590d2f5021f14e3e08bd68e6aa462d0ba7789cabdbee3ad331aaf06202d84ca",
+  "calibration_sha256": "c829fbfe410481ccea45f571dca9242e5d3bc2d5dc284bc76e583af3a39cafe5",
+  "status": "provisional_not_validated"
+}
